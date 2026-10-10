@@ -10,6 +10,8 @@ import Templates from './pages/Templates'
 import TemplateDesigner from './pages/TemplateDesigner'
 import Users from './pages/Users'
 import Account from './pages/Account'
+import { Logo } from './components/Logo'
+import { applyTheme, savedTheme, type Theme } from './theme'
 
 type Session = { me: Me; settings: Settings; signOut: () => Promise<void> }
 const SessionContext = createContext<Session | null>(null)
@@ -79,10 +81,7 @@ function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-          <rect width="32" height="32" rx="7" fill="var(--accent)" />
-          <path d="M5 17h5l3-7 4 13 3-9 2 3h5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Logo />
         <span>{settings.name}</span>
         {settings.demo && <span className="badge warn" title="Synthetic data only">Demo</span>}
       </div>
@@ -92,9 +91,21 @@ function TopBar() {
         {me.role === 'Admin' && <NavLink to="/users">Users</NavLink>}
       </nav>
       <div className="who">
+        <ThemeToggle />
         <NavLink to="/account" className="who-name">{me.displayName} <span className="muted">· {me.role}</span></NavLink>
         <button className="link" onClick={signOut}>Sign out</button>
       </div>
     </header>
+  )
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>(savedTheme())
+  const next: Theme = theme === 'dark' ? 'light' : 'dark'
+  return (
+    <button className="theme-toggle" title={`Switch to ${next} theme`} aria-label={`Switch to ${next} theme`}
+      onClick={() => { applyTheme(next); setTheme(next) }}>
+      {theme === 'dark' ? '☀' : '☾'}
+    </button>
   )
 }

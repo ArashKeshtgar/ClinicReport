@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, type Me, type Settings } from '../api'
+import { Logo } from '../components/Logo'
 
 const DEMO_LABELS: Record<string, { title: string; text: string }> = {
   'demo.typist': { title: 'Typist', text: 'Fills reports while the study is done.' },
@@ -33,7 +34,7 @@ export default function Login({ settings, onSignedIn }: { settings: Settings; on
   return (
     <div className="login">
       <div className="login-card card">
-        <h1>{settings.name}</h1>
+        <div className="login-brand"><Logo size={40} /><h1>{settings.name}</h1></div>
         <p className="muted">Structured clinical reporting</p>
 
         {settings.demo && (
