@@ -10,6 +10,12 @@ public class DemoOptions
 {
     /// <summary>Seeds synthetic patients and one-click demo users. Never enable on a server with real patients.</summary>
     public bool Enabled { get; set; }
+
+    /// <summary>When set (0–23), the demo database is wiped and re-seeded every day at this UTC hour.</summary>
+    public int? ResetHourUtc { get; set; }
+
+    /// <summary>Visitors are all admins in the demo, so by default nobody can add accounts or change passwords.</summary>
+    public bool LockAccounts { get; set; } = true;
 }
 
 public class ClinicOptions

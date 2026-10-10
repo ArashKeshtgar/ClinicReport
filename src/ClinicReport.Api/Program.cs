@@ -19,6 +19,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddHostedService<DemoResetService>();
 builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ReportRuleHandler>();
@@ -37,7 +38,8 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
-await InitializeDatabaseAsync(app);
+using (var scope = app.Services.CreateScope())
+    await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -71,22 +73,6 @@ app.MapHub<ReportHub>("/hubs/report");
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
-
-static async Task InitializeDatabaseAsync(WebApplication app)
-{
-    using var scope = app.Services.CreateScope();
-    var services = scope.ServiceProvider;
-    var db = services.GetRequiredService<ClinicReportDbContext>();
-    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    var now = services.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime;
-    var hasher = services.GetRequiredService<IPasswordHasher<AppUser>>();
-
-    await db.Database.MigrateAsync();
-    await TemplateSeeder.SeedAsync(db, Path.Combine(AppContext.BaseDirectory, "templates"), logger, now);
-    if (services.GetRequiredService<IOptions<DemoOptions>>().Value.Enabled)
-        await DemoSeeder.SeedAsync(db, hasher, now);
-    await UserBootstrap.SeedAsync(db, app.Configuration, hasher, logger, now);
-}
 
 /// <summary>Turns business-rule violations into ProblemDetails with the right status code.</summary>
 internal sealed class ReportRuleHandler(IProblemDetailsService problems) : IExceptionHandler

@@ -61,7 +61,8 @@ Configuration is by environment variable (see [`docker-compose.yml`](docker-comp
 | `Bootstrap__AdminPassword` | Password for the first admin instead of a generated one |
 | `ConnectionStrings__ClinicReport` | SQLite connection string (default `/data/clinicreport.db` in the container) |
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` | When behind a TLS-terminating reverse proxy |
-| `Demo__Enabled=true` | Synthetic patients and one-click demo users. **Never** on a server with real patients |
+| `Demo__Enabled=true` | Synthetic patients and one-click demo users; accounts and passwords are locked. **Never** on a server with real patients |
+| `Demo__ResetHourUtc=8` | With demo mode: wipe and re-seed the demo every day at that UTC hour |
 
 Serve it over HTTPS (for example behind Caddy or nginx). Back up the `/data` volume.
 

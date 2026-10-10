@@ -19,6 +19,7 @@ services:
       # Bootstrap__AdminPassword: "set-a-long-password-here"
       # Public demo with synthetic data only - never together with real patients:
       # Demo__Enabled: "true"
+      # Demo__ResetHourUtc: "8"        # wipe and re-seed the demo daily at 08:00 UTC
     restart: unless-stopped
 
 volumes:

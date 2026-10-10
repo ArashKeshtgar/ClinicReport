@@ -124,6 +124,7 @@ label.check.tiny { font-size: .75rem; color: var(--muted); margin-top: .15rem; }
 .topbar nav a.active { background: var(--accent-soft); color: var(--accent-strong); }
 .who { display: flex; align-items: center; gap: .75rem; font-size: .9rem; }
 .who-name { color: var(--text); text-decoration: none; }
+.demo-banner { background: var(--warn-soft); color: var(--warn); text-align: center; padding: .35rem 1rem; font-size: .85rem; }
 .page { padding: 1.25rem; max-width: 1500px; margin: 0 auto; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .toolbar { display: flex; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -311,7 +312,8 @@ table.measurements tr.flagged td:nth-child(2) { font-weight: 700; }
   .preview-col, .outline, .props, .designer-preview { position: static; max-height: none; }
 }
 @media (max-width: 640px) {
-  .page { padding: .75rem 1rem; }
+  .demo-banner { background: var(--warn-soft); color: var(--warn); text-align: center; padding: .35rem 1rem; font-size: .85rem; }
+.page { padding: .75rem 1rem; }
   .topbar { flex-wrap: wrap; gap: .5rem 1rem; padding: .5rem 1rem; }
   .topbar nav { order: 3; flex-basis: 100%; }
   .field { grid-template-columns: 1fr; }

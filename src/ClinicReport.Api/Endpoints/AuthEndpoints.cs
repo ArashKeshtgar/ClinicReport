@@ -73,7 +73,7 @@ public static class AuthEndpoints
             user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        }).RequireRateLimiting(LoginRateLimit);
+        }).RequireRateLimiting(LoginRateLimit).AddEndpointFilter(UserEndpoints.DemoReadOnly);
     }
 
     public static MeDto ToMe(AppUser u) => new(u.Id, u.UserName, u.DisplayName, u.Credentials, u.Role);

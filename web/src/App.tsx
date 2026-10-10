@@ -52,6 +52,11 @@ export default function App() {
   return (
     <SessionContext.Provider value={{ me, settings, signOut }}>
       {!printing && <TopBar />}
+      {!printing && settings.demo && (
+        <div className="demo-banner" role="note">
+          Public demo with synthetic patients. <strong>Do not enter real patient information.</strong>
+        </div>
+      )}
       <main className={printing ? '' : 'page'}>
         <Routes>
           <Route path="/" element={<Worklist />} />

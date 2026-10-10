@@ -9,8 +9,10 @@ using Microsoft.Data.Sqlite;
 namespace ClinicReport.Tests;
 
 /// <summary>A fresh SQLite database with the demo data for each test class.</summary>
-public sealed class ApiFactory : WebApplicationFactory<Program>
+public class ApiFactory : WebApplicationFactory<Program>
 {
+    protected virtual bool LockAccounts => false;
+
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"clinicreport-test-{Guid.NewGuid():N}.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -19,6 +21,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:ClinicReport", $"Data Source={_dbPath}");
         builder.UseSetting("Demo:Enabled", "true");
         builder.UseSetting("RateLimits:LoginsPerMinute", "1000");
+        builder.UseSetting("Demo:LockAccounts", LockAccounts ? "true" : "false");
     }
 
     public async Task<HttpClient> SignInAsync(string demoUser)
@@ -247,5 +250,29 @@ public class ApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         await Json(await admin.PutAsJsonAsync($"/api/users/{created["id"]}", new { displayName = "Temp", role = "Typist", isActive = false }));
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/reports")).StatusCode);
+    }
+}
+
+/// <summary>The public demo as deployed: accounts locked.</summary>
+public sealed class LockedDemoFactory : ApiFactory
+{
+    protected override bool LockAccounts => true;
+}
+
+public class PublicDemoTests(LockedDemoFactory factory) : IClassFixture<LockedDemoFactory>
+{
+    [Fact]
+    public async Task Demo_visitors_cannot_create_accounts_or_change_passwords()
+    {
+        var admin = await factory.SignInAsync("demo.admin");
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PostAsJsonAsync("/api/users", new
+        {
+            userName = "intruder", displayName = "X", role = "Admin", password = "long-enough-password",
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PostAsJsonAsync("/api/auth/password", new
+        {
+            currentPassword = "x", newPassword = "long-enough-password",
+        })).StatusCode);
     }
 }

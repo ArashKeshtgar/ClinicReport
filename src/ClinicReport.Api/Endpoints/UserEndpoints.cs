@@ -23,7 +23,8 @@ public static class UserEndpoints
 
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/users").WithTags("Users").RequireAuthorization(Policies.Admin);
+        var api = app.MapGroup("/api/users").WithTags("Users").RequireAuthorization(Policies.Admin)
+            .AddEndpointFilter(DemoReadOnly);
 
         api.MapGet("/", async (ClinicReportDbContext db) =>
             await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
@@ -86,6 +87,15 @@ public static class UserEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+    }
+
+    /// <summary>In the public demo anyone is admin, so accounts and passwords stay as seeded.</summary>
+    public static async ValueTask<object?> DemoReadOnly(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
+    {
+        var demo = ctx.HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<DemoOptions>>().Value;
+        if (demo.Enabled && demo.LockAccounts && !HttpMethods.IsGet(ctx.HttpContext.Request.Method))
+            return Results.Problem("User accounts can't be changed in the public demo.", statusCode: StatusCodes.Status403Forbidden);
+        return await next(ctx);
     }
 
     private static void Validate(string? displayName, string? role, Dictionary<string, string[]> errors)
