@@ -21,7 +21,7 @@ COPY --from=build /app ./
 COPY --from=web /web/dist ./wwwroot
 RUN mkdir /data && chown app:app /data
 ENV ASPNETCORE_URLS=http://+:8080 \
-    ConnectionStrings__ClinicReport="Data Source=/data/clinicreport.db"
+    ConnectionStrings__ClinicReport="Data Source=/data/clinicreport.db"     DataProtection__KeysDirectory=/data/keys
 VOLUME /data
 USER app
 EXPOSE 8080

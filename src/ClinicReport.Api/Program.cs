@@ -3,6 +3,7 @@ using ClinicReport.Api.Auth;
 using ClinicReport.Api.Data;
 using ClinicReport.Api.Endpoints;
 using ClinicReport.Api.Reports;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("ClinicReport") ?? "Data Source=clinicreport.db";
 builder.Services.AddDbContext<ClinicReportDbContext>(o => o.UseSqlite(connectionString));
+
+// Keys that encrypt the sign-in cookie. In the container they live in the data volume, so a redeploy
+// doesn't sign everyone out.
+if (builder.Configuration["DataProtection:KeysDirectory"] is { Length: > 0 } keysDirectory)
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keysDirectory)).SetApplicationName("ClinicReport");
 
 builder.Services.Configure<DemoOptions>(builder.Configuration.GetSection("Demo"));
 builder.Services.Configure<ClinicOptions>(builder.Configuration.GetSection("Clinic"));
