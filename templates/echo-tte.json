@@ -1,0 +1,643 @@
+{
+  // Adult transthoracic echocardiogram. Reference ranges follow the ASE/EACVI chamber quantification
+  // recommendations (Lang et al., JASE 2015) and the ASE/EACVI diastolic function recommendations
+  // (Nagueh et al., JASE 2016). Review them against your laboratory's own standards before clinical use.
+  "key": "echo-tte",
+  "name": "Transthoracic Echocardiogram (TTE)",
+  "service": "Echocardiography",
+  "description": "Adult resting transthoracic echo: chambers, valves, pericardium, aorta, measurements with ASE 2015 normal ranges.",
+  "sections": [
+    {
+      "id": "study",
+      "title": "Study",
+      "normalPreset": { "quality": "good", "rhythm": "sinus" },
+      "fields": [
+        {
+          "id": "quality", "label": "Image quality", "type": "choice", "required": true,
+          "options": [
+            { "value": "good", "label": "Good", "phrase": "" },
+            { "value": "adequate", "label": "Adequate", "phrase": "Image quality is adequate." },
+            { "value": "suboptimal", "label": "Suboptimal", "phrase": "Image quality is suboptimal; findings should be interpreted with caution." },
+            { "value": "poor", "label": "Poor / technically difficult", "phrase": "This is a technically difficult study with limited image quality." }
+          ]
+        },
+        {
+          "id": "rhythm", "label": "Rhythm", "type": "choice",
+          "options": [
+            { "value": "sinus", "label": "Sinus rhythm", "phrase": "" },
+            { "value": "sinus_tachy", "label": "Sinus tachycardia", "phrase": "The patient was in sinus tachycardia during the study." },
+            { "value": "sinus_brady", "label": "Sinus bradycardia", "phrase": "The patient was in sinus bradycardia during the study." },
+            { "value": "af", "label": "Atrial fibrillation", "phrase": "The patient was in atrial fibrillation during the study.", "abnormal": true },
+            { "value": "flutter", "label": "Atrial flutter", "phrase": "The patient was in atrial flutter during the study.", "abnormal": true },
+            { "value": "paced", "label": "Paced rhythm", "phrase": "The rhythm was paced during the study." }
+          ]
+        },
+        { "id": "heart_rate", "label": "Heart rate", "type": "number", "unit": "bpm", "decimals": 0 },
+        {
+          "id": "bsa", "label": "BSA (Mosteller)", "type": "computed", "unit": "m²", "decimals": 2,
+          "formula": "sqrt(height * weight / 3600)", "hint": "From the height and weight entered in the report header."
+        }
+      ]
+    },
+    {
+      "id": "lv",
+      "title": "Left ventricle",
+      "normalPreset": { "lv_size": "normal", "lv_wall": "normal", "lv_function": "normal", "rwma": "none", "lv_thrombus": "none" },
+      "fields": [
+        {
+          "id": "lv_size", "label": "Size", "type": "choice", "required": true,
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The left ventricle is normal in size." },
+            { "value": "small", "label": "Small", "phrase": "The left ventricular cavity is small." },
+            { "value": "mild", "label": "Mildly dilated", "phrase": "The left ventricle is mildly dilated.", "abnormal": true },
+            { "value": "moderate", "label": "Moderately dilated", "phrase": "The left ventricle is moderately dilated.", "abnormal": true },
+            { "value": "severe", "label": "Severely dilated", "phrase": "The left ventricle is severely dilated.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "lv_wall", "label": "Wall thickness / geometry", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "Wall thickness is normal." },
+            { "value": "remodeling", "label": "Concentric remodeling", "phrase": "There is concentric remodeling.", "abnormal": true },
+            { "value": "concentric_lvh", "label": "Concentric hypertrophy", "phrase": "There is concentric left ventricular hypertrophy.", "abnormal": true },
+            { "value": "eccentric_lvh", "label": "Eccentric hypertrophy", "phrase": "There is eccentric left ventricular hypertrophy.", "abnormal": true },
+            { "value": "asymmetric", "label": "Asymmetric septal hypertrophy", "phrase": "There is asymmetric septal hypertrophy.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "lv_function", "label": "Systolic function", "type": "choice", "required": true,
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "Left ventricular systolic function is normal." },
+            { "value": "hyperdynamic", "label": "Hyperdynamic", "phrase": "Left ventricular systolic function is hyperdynamic." },
+            { "value": "mild", "label": "Mildly reduced", "phrase": "Left ventricular systolic function is mildly reduced.", "abnormal": true },
+            { "value": "moderate", "label": "Moderately reduced", "phrase": "Left ventricular systolic function is moderately reduced.", "abnormal": true },
+            { "value": "severe", "label": "Severely reduced", "phrase": "Left ventricular systolic function is severely reduced.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "lvef", "label": "LVEF", "type": "number", "unit": "%", "decimals": 0,
+          "phrase": "The ejection fraction is estimated at {value}%.",
+          "normal": { "male": { "min": 52, "max": 72 }, "female": { "min": 54, "max": 74 }, "source": "ASE/EACVI 2015, biplane" }
+        },
+        {
+          "id": "rwma", "label": "Regional wall motion", "type": "choice",
+          "options": [
+            { "value": "none", "label": "No RWMA", "phrase": "There are no regional wall motion abnormalities." },
+            { "value": "present", "label": "RWMA present", "phrase": "There are regional wall motion abnormalities.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "rwma_walls", "label": "Involved walls", "type": "multi",
+              "showIf": { "field": "rwma", "anyOf": ["present"] },
+              "phrase": "Involved segments: {values}.",
+              "options": [
+                { "value": "anterior", "label": "anterior" },
+                { "value": "anteroseptal", "label": "anteroseptal" },
+                { "value": "inferoseptal", "label": "inferoseptal" },
+                { "value": "inferior", "label": "inferior" },
+                { "value": "inferolateral", "label": "inferolateral" },
+                { "value": "anterolateral", "label": "anterolateral" },
+                { "value": "apical", "label": "apical" }
+              ]
+            },
+            {
+              "id": "rwma_type", "label": "Type", "type": "choice",
+              "showIf": { "field": "rwma", "anyOf": ["present"] },
+              "options": [
+                { "value": "hypo", "label": "Hypokinesis", "phrase": "These segments are hypokinetic." },
+                { "value": "akinesis", "label": "Akinesis", "phrase": "These segments are akinetic." },
+                { "value": "dyskinesis", "label": "Dyskinesis", "phrase": "These segments are dyskinetic." },
+                { "value": "aneurysm", "label": "Aneurysm", "phrase": "There is a left ventricular aneurysm.", "abnormal": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "lv_thrombus", "label": "Thrombus", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None seen", "phrase": "" },
+            { "value": "present", "label": "Present", "phrase": "A left ventricular thrombus is seen.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "lv_thrombus_detail", "label": "Thrombus details", "type": "choice",
+              "showIf": { "field": "lv_thrombus", "anyOf": ["present"] },
+              "options": [
+                { "value": "layered", "label": "Layered", "phrase": "The thrombus is layered." },
+                { "value": "mobile", "label": "Mobile / protruding", "phrase": "The thrombus is mobile and protrudes into the cavity." }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "diastolic",
+      "title": "Diastolic function",
+      "normalPreset": { "dd": "normal" },
+      "fields": [
+        {
+          "id": "dd", "label": "Diastolic function", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "Left ventricular diastolic function is normal." },
+            { "value": "g1", "label": "Grade I (impaired relaxation)", "phrase": "There is grade I diastolic dysfunction (impaired relaxation).", "abnormal": true },
+            { "value": "g2", "label": "Grade II (pseudonormal)", "phrase": "There is grade II diastolic dysfunction with elevated filling pressures.", "abnormal": true },
+            { "value": "g3", "label": "Grade III (restrictive)", "phrase": "There is grade III (restrictive) diastolic dysfunction.", "abnormal": true },
+            { "value": "indeterminate", "label": "Indeterminate", "phrase": "Diastolic function is indeterminate." },
+            { "value": "not_assessed", "label": "Not assessed", "phrase": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rv",
+      "title": "Right ventricle",
+      "normalPreset": { "rv_size": "normal", "rv_function": "normal" },
+      "fields": [
+        {
+          "id": "rv_size", "label": "Size", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The right ventricle is normal in size." },
+            { "value": "mild", "label": "Mildly dilated", "phrase": "The right ventricle is mildly dilated.", "abnormal": true },
+            { "value": "moderate", "label": "Moderately dilated", "phrase": "The right ventricle is moderately dilated.", "abnormal": true },
+            { "value": "severe", "label": "Severely dilated", "phrase": "The right ventricle is severely dilated.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "rv_function", "label": "Systolic function", "type": "choice", "required": true,
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "Right ventricular systolic function is normal." },
+            { "value": "mild", "label": "Mildly reduced", "phrase": "Right ventricular systolic function is mildly reduced.", "abnormal": true },
+            { "value": "moderate", "label": "Moderately reduced", "phrase": "Right ventricular systolic function is moderately reduced.", "abnormal": true },
+            { "value": "severe", "label": "Severely reduced", "phrase": "Right ventricular systolic function is severely reduced.", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "atria",
+      "title": "Atria and interatrial septum",
+      "normalPreset": { "la_size": "normal", "ra_size": "normal", "ias": "intact" },
+      "fields": [
+        {
+          "id": "la_size", "label": "Left atrium", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The left atrium is normal in size." },
+            { "value": "mild", "label": "Mildly dilated", "phrase": "The left atrium is mildly dilated.", "abnormal": true },
+            { "value": "moderate", "label": "Moderately dilated", "phrase": "The left atrium is moderately dilated.", "abnormal": true },
+            { "value": "severe", "label": "Severely dilated", "phrase": "The left atrium is severely dilated.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "ra_size", "label": "Right atrium", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The right atrium is normal in size." },
+            { "value": "dilated", "label": "Dilated", "phrase": "The right atrium is dilated.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "ias", "label": "Interatrial septum", "type": "choice",
+          "options": [
+            { "value": "intact", "label": "Intact by 2D and colour Doppler", "phrase": "The interatrial septum appears intact by 2D and colour Doppler." },
+            { "value": "pfo", "label": "Patent foramen ovale", "phrase": "There is a patent foramen ovale.", "abnormal": true },
+            { "value": "asd", "label": "Atrial septal defect", "phrase": "There is an atrial septal defect.", "abnormal": true },
+            { "value": "aneurysm", "label": "Septal aneurysm", "phrase": "There is an interatrial septal aneurysm." },
+            { "value": "lipomatous", "label": "Lipomatous hypertrophy", "phrase": "There is lipomatous hypertrophy of the interatrial septum." },
+            { "value": "not_seen", "label": "Not well seen", "phrase": "The interatrial septum is not well visualized." }
+          ],
+          "children": [
+            {
+              "id": "asd_type", "label": "ASD type", "type": "choice",
+              "showIf": { "field": "ias", "anyOf": ["asd"] },
+              "phrase": "The defect is of the {value} type.",
+              "options": [
+                { "value": "secundum", "label": "secundum" },
+                { "value": "primum", "label": "primum" },
+                { "value": "sinus_venosus", "label": "sinus venosus" }
+              ]
+            },
+            {
+              "id": "atrial_shunt", "label": "Shunt direction", "type": "choice",
+              "showIf": { "field": "ias", "anyOf": ["pfo", "asd"] },
+              "options": [
+                { "value": "lr", "label": "Left to right", "phrase": "Shunting is left to right." },
+                { "value": "rl", "label": "Right to left", "phrase": "Shunting is right to left.", "abnormal": true },
+                { "value": "bi", "label": "Bidirectional", "phrase": "Shunting is bidirectional.", "abnormal": true }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mitral",
+      "title": "Mitral valve",
+      "normalPreset": { "mv_morph": "normal", "ms": "none", "mr": "none" },
+      "fields": [
+        {
+          "id": "mv_morph", "label": "Morphology", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The mitral valve is structurally normal." },
+            { "value": "abnormal", "label": "Abnormal", "phrase": "" },
+            { "value": "prosthetic", "label": "Prosthesis / repair", "phrase": "" }
+          ],
+          "children": [
+            {
+              "id": "mv_findings", "label": "Findings", "type": "multi",
+              "showIf": { "field": "mv_morph", "anyOf": ["abnormal"] },
+              "phrase": "The mitral valve shows {values}.",
+              "options": [
+                { "value": "thickened", "label": "thickened leaflets", "abnormal": true },
+                { "value": "calcified", "label": "calcified leaflets", "abnormal": true },
+                { "value": "mac", "label": "mitral annular calcification" },
+                { "value": "prolapse_ant", "label": "anterior leaflet prolapse", "abnormal": true },
+                { "value": "prolapse_post", "label": "posterior leaflet prolapse", "abnormal": true },
+                { "value": "flail", "label": "a flail segment", "abnormal": true },
+                { "value": "rheumatic", "label": "rheumatic changes", "abnormal": true },
+                { "value": "subvalvular", "label": "subvalvular thickening", "abnormal": true }
+              ]
+            },
+            {
+              "id": "mv_prosthesis", "label": "Prosthesis type", "type": "choice",
+              "showIf": { "field": "mv_morph", "anyOf": ["prosthetic"] },
+              "options": [
+                { "value": "bio", "label": "Bioprosthetic", "phrase": "A bioprosthetic valve is in the mitral position." },
+                { "value": "bileaflet", "label": "Mechanical bileaflet", "phrase": "A mechanical bileaflet valve is in the mitral position." },
+                { "value": "tilting", "label": "Mechanical tilting disc", "phrase": "A mechanical tilting-disc valve is in the mitral position." },
+                { "value": "caged_ball", "label": "Caged ball", "phrase": "A caged-ball valve is in the mitral position." },
+                { "value": "ring", "label": "Annuloplasty ring / repair", "phrase": "There is a mitral annuloplasty ring." }
+              ]
+            },
+            {
+              "id": "mv_prosthesis_fn", "label": "Prosthesis function", "type": "choice",
+              "showIf": { "field": "mv_morph", "anyOf": ["prosthetic"] },
+              "options": [
+                { "value": "normal", "label": "Normal", "phrase": "The prosthesis appears to function normally." },
+                { "value": "dysfunction", "label": "Dysfunction", "phrase": "There is evidence of prosthetic mitral valve dysfunction.", "abnormal": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ms", "label": "Stenosis", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None", "phrase": "" },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild mitral stenosis.", "abnormal": true },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate mitral stenosis.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe mitral stenosis.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "mv_mean_grad", "label": "Mean gradient", "type": "number", "unit": "mmHg", "decimals": 0,
+              "showIf": { "field": "ms", "noneOf": ["none"] },
+              "phrase": "The mean transmitral gradient is {value} mmHg"
+            },
+            {
+              "id": "mva", "label": "MVA (planimetry / PHT)", "type": "number", "unit": "cm²", "decimals": 1,
+              "showIf": { "field": "ms", "noneOf": ["none"] },
+              "phrase": "Mitral valve area is {value} cm²."
+            }
+          ]
+        },
+        {
+          "id": "mr", "label": "Regurgitation", "type": "choice", "required": true,
+          "options": [
+            { "value": "none", "label": "None", "phrase": "There is no mitral regurgitation." },
+            { "value": "trace", "label": "Trace", "phrase": "There is trace mitral regurgitation." },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild mitral regurgitation." },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate mitral regurgitation.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe mitral regurgitation.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "mr_mechanism", "label": "MR etiology", "type": "choice",
+              "showIf": { "field": "mr", "anyOf": ["mild", "moderate", "severe"] },
+              "options": [
+                { "value": "primary", "label": "Primary (degenerative)", "phrase": "The mechanism is primary (degenerative)." },
+                { "value": "secondary", "label": "Secondary (functional)", "phrase": "The mechanism is secondary (functional)." },
+                { "value": "rheumatic", "label": "Rheumatic", "phrase": "The mechanism is rheumatic." }
+              ]
+            },
+            {
+              "id": "mr_jet", "label": "MR direction", "type": "choice",
+              "showIf": { "field": "mr", "anyOf": ["mild", "moderate", "severe"] },
+              "options": [
+                { "value": "central", "label": "Central", "phrase": "The jet is central." },
+                { "value": "anterior", "label": "Eccentric, anteriorly directed", "phrase": "The jet is eccentric and anteriorly directed." },
+                { "value": "posterior", "label": "Eccentric, posteriorly directed", "phrase": "The jet is eccentric and posteriorly directed." }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aortic",
+      "title": "Aortic valve",
+      "normalPreset": { "av_morph": "trileaflet", "as": "none", "ar": "none" },
+      "fields": [
+        {
+          "id": "av_morph", "label": "Morphology", "type": "choice",
+          "options": [
+            { "value": "trileaflet", "label": "Trileaflet, normal", "phrase": "The aortic valve is trileaflet and opens normally." },
+            { "value": "sclerotic", "label": "Sclerotic (thickened/calcified)", "phrase": "The aortic valve is sclerotic without significant stenosis." },
+            { "value": "bicuspid", "label": "Bicuspid", "phrase": "The aortic valve is bicuspid.", "abnormal": true },
+            { "value": "prosthetic", "label": "Prosthesis", "phrase": "" },
+            { "value": "not_seen", "label": "Not well seen", "phrase": "The aortic valve is not well visualized." }
+          ],
+          "children": [
+            {
+              "id": "av_prosthesis", "label": "Prosthesis type", "type": "choice",
+              "showIf": { "field": "av_morph", "anyOf": ["prosthetic"] },
+              "options": [
+                { "value": "bio", "label": "Bioprosthetic (surgical)", "phrase": "A bioprosthetic valve is in the aortic position." },
+                { "value": "tavi", "label": "Transcatheter (TAVI)", "phrase": "A transcatheter valve is in the aortic position." },
+                { "value": "mechanical", "label": "Mechanical", "phrase": "A mechanical valve is in the aortic position." }
+              ]
+            },
+            {
+              "id": "av_prosthesis_fn", "label": "Prosthesis function", "type": "choice",
+              "showIf": { "field": "av_morph", "anyOf": ["prosthetic"] },
+              "options": [
+                { "value": "normal", "label": "Normal", "phrase": "The prosthesis appears to function normally." },
+                { "value": "pvl", "label": "Paravalvular leak", "phrase": "There is a paravalvular leak.", "abnormal": true },
+                { "value": "dysfunction", "label": "Dysfunction", "phrase": "There is evidence of prosthetic aortic valve dysfunction.", "abnormal": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "as", "label": "Stenosis", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None", "phrase": "" },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild aortic stenosis.", "abnormal": true },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate aortic stenosis.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe aortic stenosis.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "av_vmax", "label": "Peak velocity", "type": "number", "unit": "m/s", "decimals": 1,
+              "showIf": { "field": "as", "noneOf": ["none"] },
+              "phrase": "Peak aortic velocity is {value} m/s."
+            },
+            {
+              "id": "av_mean_grad", "label": "Mean gradient", "type": "number", "unit": "mmHg", "decimals": 0,
+              "showIf": { "field": "as", "noneOf": ["none"] },
+              "phrase": "The mean gradient is {value} mmHg."
+            },
+            {
+              "id": "ava", "label": "AVA (continuity)", "type": "number", "unit": "cm²", "decimals": 2,
+              "showIf": { "field": "as", "noneOf": ["none"] },
+              "phrase": "Aortic valve area by continuity is {value} cm²."
+            }
+          ]
+        },
+        {
+          "id": "ar", "label": "Regurgitation", "type": "choice", "required": true,
+          "options": [
+            { "value": "none", "label": "None", "phrase": "There is no aortic regurgitation." },
+            { "value": "trace", "label": "Trace", "phrase": "There is trace aortic regurgitation." },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild aortic regurgitation." },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate aortic regurgitation.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe aortic regurgitation.", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tricuspid",
+      "title": "Tricuspid valve and pulmonary pressure",
+      "normalPreset": { "tv_morph": "normal", "tr": "trace" },
+      "fields": [
+        {
+          "id": "tv_morph", "label": "Morphology", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The tricuspid valve is structurally normal." },
+            { "value": "abnormal", "label": "Abnormal", "phrase": "" },
+            { "value": "prosthetic", "label": "Prosthesis / ring", "phrase": "There is a tricuspid prosthesis or annuloplasty ring." }
+          ],
+          "children": [
+            {
+              "id": "tv_findings", "label": "Findings", "type": "multi",
+              "showIf": { "field": "tv_morph", "anyOf": ["abnormal"] },
+              "phrase": "The tricuspid valve shows {values}.",
+              "options": [
+                { "value": "thickened", "label": "thickened leaflets" },
+                { "value": "prolapse", "label": "leaflet prolapse", "abnormal": true },
+                { "value": "lead", "label": "a device lead across the valve" },
+                { "value": "rheumatic", "label": "rheumatic changes", "abnormal": true },
+                { "value": "ebstein", "label": "Ebstein anomaly", "abnormal": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tr", "label": "Regurgitation", "type": "choice", "required": true,
+          "options": [
+            { "value": "none", "label": "None", "phrase": "There is no tricuspid regurgitation." },
+            { "value": "trace", "label": "Trace", "phrase": "There is trace tricuspid regurgitation." },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild tricuspid regurgitation." },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate tricuspid regurgitation.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe tricuspid regurgitation.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "tr_vmax", "label": "TR peak velocity", "type": "number", "unit": "m/s", "decimals": 1,
+          "normal": { "max": 2.8, "source": "ASE 2016" }
+        },
+        {
+          "id": "rap", "label": "Estimated RA pressure", "type": "number", "unit": "mmHg", "decimals": 0,
+          "hint": "From IVC: ≤21 mm and >50% collapse = 3; >21 mm and <50% collapse = 15; otherwise 8."
+        },
+        {
+          "id": "rvsp", "label": "RVSP", "type": "computed", "unit": "mmHg", "decimals": 0,
+          "formula": "4 * tr_vmax ^ 2 + rap", "normal": { "max": 35 },
+          "phrase": "Estimated right ventricular systolic pressure is {value} mmHg."
+        },
+        {
+          "id": "ivc", "label": "IVC", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal size, collapses >50%", "phrase": "The IVC is normal in size with normal respiratory collapse." },
+            { "value": "intermediate", "label": "Intermediate", "phrase": "The IVC is borderline in size or collapse." },
+            { "value": "plethoric", "label": "Dilated, collapses <50%", "phrase": "The IVC is dilated with reduced respiratory collapse, consistent with elevated right atrial pressure.", "abnormal": true },
+            { "value": "not_seen", "label": "Not visualized", "phrase": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pulmonic",
+      "title": "Pulmonic valve",
+      "normalPreset": { "pv_morph": "normal", "ps": "none", "pr": "trace" },
+      "fields": [
+        {
+          "id": "pv_morph", "label": "Morphology", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The pulmonic valve appears normal." },
+            { "value": "abnormal", "label": "Abnormal", "phrase": "The pulmonic valve is abnormal.", "abnormal": true },
+            { "value": "prosthetic", "label": "Prosthesis", "phrase": "There is a pulmonic valve prosthesis." },
+            { "value": "not_seen", "label": "Not well seen", "phrase": "The pulmonic valve is not well visualized." }
+          ]
+        },
+        {
+          "id": "ps", "label": "Stenosis", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None", "phrase": "" },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild pulmonic stenosis.", "abnormal": true },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate pulmonic stenosis.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe pulmonic stenosis.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "pr", "label": "Regurgitation", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None", "phrase": "" },
+            { "value": "trace", "label": "Trace", "phrase": "There is trace pulmonic regurgitation." },
+            { "value": "mild", "label": "Mild", "phrase": "There is mild pulmonic regurgitation." },
+            { "value": "moderate", "label": "Moderate", "phrase": "There is moderate pulmonic regurgitation.", "abnormal": true },
+            { "value": "severe", "label": "Severe", "phrase": "There is severe pulmonic regurgitation.", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pericardium",
+      "title": "Pericardium",
+      "normalPreset": { "pericardium": "normal" },
+      "fields": [
+        {
+          "id": "pericardium", "label": "Pericardium", "type": "choice", "required": true,
+          "options": [
+            { "value": "normal", "label": "Normal, no effusion", "phrase": "There is no pericardial effusion." },
+            { "value": "effusion", "label": "Effusion", "phrase": "" },
+            { "value": "thickened", "label": "Thickened / calcified", "phrase": "The pericardium appears thickened.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "effusion_size", "label": "Effusion size", "type": "choice",
+              "showIf": { "field": "pericardium", "anyOf": ["effusion"] },
+              "options": [
+                { "value": "trivial", "label": "Trivial", "phrase": "There is a trivial pericardial effusion." },
+                { "value": "small", "label": "Small (<10 mm)", "phrase": "There is a small pericardial effusion.", "abnormal": true },
+                { "value": "moderate", "label": "Moderate (10–20 mm)", "phrase": "There is a moderate pericardial effusion.", "abnormal": true },
+                { "value": "large", "label": "Large (>20 mm)", "phrase": "There is a large pericardial effusion.", "abnormal": true }
+              ]
+            },
+            {
+              "id": "effusion_distribution", "label": "Distribution", "type": "choice",
+              "showIf": { "field": "pericardium", "anyOf": ["effusion"] },
+              "options": [
+                { "value": "circumferential", "label": "Circumferential", "phrase": "It is circumferential." },
+                { "value": "localized", "label": "Localized", "phrase": "It is localized." }
+              ]
+            },
+            {
+              "id": "tamponade", "label": "Tamponade physiology", "type": "choice",
+              "showIf": { "field": "effusion_size", "anyOf": ["small", "moderate", "large"] },
+              "options": [
+                { "value": "no", "label": "No", "phrase": "There are no echocardiographic features of tamponade." },
+                { "value": "yes", "label": "Yes", "phrase": "There are echocardiographic features of tamponade.", "abnormal": true }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aorta",
+      "title": "Aorta",
+      "normalPreset": { "aortic_root": "normal", "asc_aorta": "normal" },
+      "fields": [
+        {
+          "id": "aortic_root", "label": "Aortic root", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The aortic root is normal in size." },
+            { "value": "dilated", "label": "Dilated", "phrase": "The aortic root is dilated.", "abnormal": true }
+          ]
+        },
+        {
+          "id": "asc_aorta", "label": "Ascending aorta", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "The visualized ascending aorta is normal in size." },
+            { "value": "dilated", "label": "Dilated", "phrase": "The ascending aorta is dilated.", "abnormal": true },
+            { "value": "not_seen", "label": "Not visualized", "phrase": "" }
+          ]
+        },
+        {
+          "id": "aorta_other", "label": "Other aortic findings", "type": "multi",
+          "phrase": "Also noted: {values}.",
+          "options": [
+            { "value": "athero", "label": "atherosclerotic changes" },
+            { "value": "plaque", "label": "aortic plaque", "abnormal": true },
+            { "value": "coarctation", "label": "suspected coarctation", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "title": "Other findings",
+      "fields": [
+        {
+          "id": "mass", "label": "Masses / vegetations", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None seen", "phrase": "" },
+            { "value": "vegetation", "label": "Vegetation", "phrase": "A vegetation is seen.", "abnormal": true },
+            { "value": "mass", "label": "Mass", "phrase": "A mass is seen.", "abnormal": true },
+            { "value": "thrombus", "label": "Thrombus", "phrase": "A thrombus is seen.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "mass_location", "label": "Location / size", "type": "text",
+              "showIf": { "field": "mass", "noneOf": ["none"] },
+              "phrase": "Location and size: {value}."
+            }
+          ]
+        },
+        { "id": "other_notes", "label": "Additional comments", "type": "textarea" }
+      ]
+    },
+    {
+      "id": "measurements",
+      "title": "Measurements",
+      "narrative": false,
+      "fields": [
+        { "id": "ivsd", "label": "IVSd", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "male": { "min": 6, "max": 10 }, "female": { "min": 6, "max": 9 }, "source": "ASE/EACVI 2015" } },
+        { "id": "lvidd", "label": "LVIDd", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "male": { "min": 42, "max": 58 }, "female": { "min": 38, "max": 52 }, "source": "ASE/EACVI 2015" } },
+        { "id": "lvpwd", "label": "LVPWd", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "male": { "min": 6, "max": 10 }, "female": { "min": 6, "max": 9 }, "source": "ASE/EACVI 2015" } },
+        { "id": "lvids", "label": "LVIDs", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "male": { "min": 25, "max": 40 }, "female": { "min": 22, "max": 35 }, "source": "ASE/EACVI 2015" } },
+        { "id": "lv_mass", "label": "LV mass (linear)", "type": "computed", "unit": "g", "decimals": 0,
+          "formula": "0.8 * (1.04 * (((lvidd + ivsd + lvpwd) / 10) ^ 3 - (lvidd / 10) ^ 3)) + 0.6" },
+        { "id": "lvmi", "label": "LV mass index", "type": "computed", "unit": "g/m²", "decimals": 0,
+          "formula": "lv_mass / bsa",
+          "normal": { "male": { "min": 49, "max": 115 }, "female": { "min": 43, "max": 95 }, "source": "ASE/EACVI 2015, linear method" } },
+        { "id": "rwt", "label": "Relative wall thickness", "type": "computed", "decimals": 2,
+          "formula": "2 * lvpwd / lvidd", "normal": { "max": 0.42 } },
+        { "id": "la_volume", "label": "LA volume (biplane)", "type": "number", "unit": "mL", "decimals": 0 },
+        { "id": "lavi", "label": "LA volume index", "type": "computed", "unit": "mL/m²", "decimals": 0,
+          "formula": "la_volume / bsa", "normal": { "min": 16, "max": 34, "source": "ASE/EACVI 2015" } },
+        { "id": "ao_root", "label": "Aortic root (sinus)", "type": "number", "unit": "mm", "decimals": 0 },
+        { "id": "ao_asc", "label": "Ascending aorta", "type": "number", "unit": "mm", "decimals": 0 },
+        { "id": "rv_basal", "label": "RV basal diameter", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "min": 25, "max": 41, "source": "ASE/EACVI 2015" } },
+        { "id": "tapse", "label": "TAPSE", "type": "number", "unit": "mm", "decimals": 0,
+          "normal": { "min": 17, "source": "ASE/EACVI 2015" } },
+        { "id": "rv_s", "label": "RV S'", "type": "number", "unit": "cm/s", "decimals": 1,
+          "normal": { "min": 9.5, "source": "ASE/EACVI 2015" } },
+        { "id": "e_wave", "label": "Mitral E", "type": "number", "unit": "cm/s", "decimals": 0 },
+        { "id": "a_wave", "label": "Mitral A", "type": "number", "unit": "cm/s", "decimals": 0 },
+        { "id": "e_a", "label": "E/A", "type": "computed", "decimals": 1, "formula": "e_wave / a_wave" },
+        { "id": "e_sept", "label": "e' septal", "type": "number", "unit": "cm/s", "decimals": 1,
+          "normal": { "min": 7, "source": "ASE/EACVI 2016" } },
+        { "id": "e_lat", "label": "e' lateral", "type": "number", "unit": "cm/s", "decimals": 1,
+          "normal": { "min": 10, "source": "ASE/EACVI 2016" } },
+        { "id": "e_e", "label": "E/e' average", "type": "computed", "decimals": 1,
+          "formula": "e_wave / avg(e_sept, e_lat)", "normal": { "max": 14, "source": "ASE/EACVI 2016" } }
+      ]
+    }
+  ]
+}

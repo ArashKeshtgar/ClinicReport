@@ -1,0 +1,161 @@
+{
+  // Resting 12-lead ECG interpretation. Interval limits are common adult values; adjust to local practice.
+  "key": "ecg-12-lead",
+  "name": "Resting 12-lead ECG",
+  "service": "Electrocardiography",
+  "description": "Rhythm, intervals with Bazett and Fridericia QTc, axis, conduction, chamber enlargement and ST-T changes.",
+  "sections": [
+    {
+      "id": "rhythm",
+      "title": "Rhythm and rate",
+      "normalPreset": { "rhythm": "sinus" },
+      "fields": [
+        {
+          "id": "rhythm", "label": "Rhythm", "type": "choice", "required": true,
+          "options": [
+            { "value": "sinus", "label": "Sinus rhythm", "phrase": "Sinus rhythm." },
+            { "value": "sinus_tachy", "label": "Sinus tachycardia", "phrase": "Sinus tachycardia.", "abnormal": true },
+            { "value": "sinus_brady", "label": "Sinus bradycardia", "phrase": "Sinus bradycardia." },
+            { "value": "af", "label": "Atrial fibrillation", "phrase": "Atrial fibrillation.", "abnormal": true },
+            { "value": "flutter", "label": "Atrial flutter", "phrase": "Atrial flutter.", "abnormal": true },
+            { "value": "junctional", "label": "Junctional rhythm", "phrase": "Junctional rhythm.", "abnormal": true },
+            { "value": "paced", "label": "Paced rhythm", "phrase": "Electronically paced rhythm." }
+          ]
+        },
+        {
+          "id": "heart_rate", "label": "Ventricular rate", "type": "number", "unit": "bpm", "decimals": 0, "required": true,
+          "normal": { "min": 60, "max": 100 }, "phrase": "Ventricular rate {value} bpm."
+        },
+        {
+          "id": "ectopy", "label": "Ectopy", "type": "multi",
+          "phrase": "There are {values}.",
+          "options": [
+            { "value": "pac", "label": "premature atrial complexes" },
+            { "value": "pvc", "label": "premature ventricular complexes", "abnormal": true },
+            { "value": "bigeminy", "label": "ventricular bigeminy", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intervals",
+      "title": "Intervals and axis",
+      "narrative": true,
+      "normalPreset": { "axis": "normal" },
+      "fields": [
+        { "id": "pr", "label": "PR", "type": "number", "unit": "ms", "decimals": 0, "normal": { "min": 120, "max": 200 } },
+        { "id": "qrs", "label": "QRS", "type": "number", "unit": "ms", "decimals": 0, "normal": { "max": 120 } },
+        { "id": "qt", "label": "QT", "type": "number", "unit": "ms", "decimals": 0 },
+        {
+          "id": "qtc_bazett", "label": "QTc (Bazett)", "type": "computed", "unit": "ms", "decimals": 0,
+          "formula": "qt / sqrt(60 / heart_rate)",
+          "normal": { "male": { "max": 450 }, "female": { "max": 460 } },
+          "phrase": "QTc (Bazett) {value} ms."
+        },
+        {
+          "id": "qtc_fridericia", "label": "QTc (Fridericia)", "type": "computed", "unit": "ms", "decimals": 0,
+          "formula": "qt / (60 / heart_rate) ^ (1 / 3)",
+          "normal": { "male": { "max": 450 }, "female": { "max": 460 } }
+        },
+        {
+          "id": "axis", "label": "QRS axis", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "Normal axis." },
+            { "value": "left", "label": "Left axis deviation", "phrase": "Left axis deviation.", "abnormal": true },
+            { "value": "right", "label": "Right axis deviation", "phrase": "Right axis deviation.", "abnormal": true },
+            { "value": "extreme", "label": "Extreme axis", "phrase": "Extreme axis deviation.", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conduction",
+      "title": "Conduction and chambers",
+      "fields": [
+        {
+          "id": "conduction", "label": "Conduction", "type": "multi",
+          "phrase": "{values}.",
+          "options": [
+            { "value": "avb1", "label": "first-degree AV block", "abnormal": true },
+            { "value": "avb2", "label": "second-degree AV block", "abnormal": true },
+            { "value": "avb3", "label": "complete heart block", "abnormal": true },
+            { "value": "rbbb", "label": "right bundle branch block", "abnormal": true },
+            { "value": "lbbb", "label": "left bundle branch block", "abnormal": true },
+            { "value": "lafb", "label": "left anterior fascicular block", "abnormal": true },
+            { "value": "ivcd", "label": "nonspecific intraventricular conduction delay", "abnormal": true },
+            { "value": "preexcitation", "label": "ventricular pre-excitation", "abnormal": true }
+          ]
+        },
+        {
+          "id": "chambers", "label": "Chamber enlargement", "type": "multi",
+          "phrase": "{values}.",
+          "options": [
+            { "value": "lvh", "label": "left ventricular hypertrophy by voltage criteria", "abnormal": true },
+            { "value": "rvh", "label": "right ventricular hypertrophy", "abnormal": true },
+            { "value": "lae", "label": "left atrial abnormality", "abnormal": true },
+            { "value": "rae", "label": "right atrial abnormality", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repolarization",
+      "title": "ST segments and T waves",
+      "normalPreset": { "st_t": "normal", "q_waves": "none" },
+      "fields": [
+        {
+          "id": "st_t", "label": "ST-T", "type": "choice",
+          "options": [
+            { "value": "normal", "label": "Normal", "phrase": "No acute ST-T changes." },
+            { "value": "nonspecific", "label": "Nonspecific changes", "phrase": "Nonspecific ST-T changes." },
+            { "value": "elevation", "label": "ST elevation", "phrase": "ST elevation.", "abnormal": true },
+            { "value": "depression", "label": "ST depression", "phrase": "ST depression.", "abnormal": true },
+            { "value": "t_inversion", "label": "T-wave inversion", "phrase": "T-wave inversion.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "st_leads", "label": "Territory", "type": "multi",
+              "showIf": { "field": "st_t", "anyOf": ["elevation", "depression", "t_inversion"] },
+              "phrase": "Seen in the {values} leads.",
+              "options": [
+                { "value": "anterior", "label": "anterior (V1–V4)" },
+                { "value": "lateral", "label": "lateral (I, aVL, V5–V6)" },
+                { "value": "inferior", "label": "inferior (II, III, aVF)" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "q_waves", "label": "Pathological Q waves", "type": "choice",
+          "options": [
+            { "value": "none", "label": "None", "phrase": "" },
+            { "value": "anterior", "label": "Anterior", "phrase": "Q waves in the anterior leads, consistent with prior infarction.", "abnormal": true },
+            { "value": "inferior", "label": "Inferior", "phrase": "Q waves in the inferior leads, consistent with prior infarction.", "abnormal": true },
+            { "value": "lateral", "label": "Lateral", "phrase": "Q waves in the lateral leads, consistent with prior infarction.", "abnormal": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comparison",
+      "title": "Comparison",
+      "fields": [
+        {
+          "id": "comparison", "label": "Compared with prior ECG", "type": "choice",
+          "options": [
+            { "value": "none", "label": "No prior available", "phrase": "No prior ECG available for comparison." },
+            { "value": "unchanged", "label": "No significant change", "phrase": "No significant change from the prior ECG." },
+            { "value": "changed", "label": "Changed", "phrase": "Changed from the prior ECG.", "abnormal": true }
+          ],
+          "children": [
+            {
+              "id": "comparison_detail", "label": "What changed", "type": "text",
+              "showIf": { "field": "comparison", "anyOf": ["changed"] },
+              "phrase": "{value}."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

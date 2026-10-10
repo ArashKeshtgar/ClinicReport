@@ -1,0 +1,25 @@
+# docker compose up -d   →  http://localhost:8080
+# The first start prints a generated admin password in the logs (docker compose logs clinicreport)
+# unless Bootstrap__AdminPassword is set below.
+services:
+  clinicreport:
+    build: .
+    image: clinicreport:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - clinicreport-data:/data
+    environment:
+      Clinic__Name: "My Clinic"
+      Clinic__Address: ""
+      Clinic__Phone: ""
+      Clinic__ReportFooter: ""
+      # Behind a TLS-terminating proxy (nginx, Caddy, Traefik) so the auth cookie is marked Secure:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # Bootstrap__AdminPassword: "set-a-long-password-here"
+      # Public demo with synthetic data only - never together with real patients:
+      # Demo__Enabled: "true"
+    restart: unless-stopped
+
+volumes:
+  clinicreport-data:
