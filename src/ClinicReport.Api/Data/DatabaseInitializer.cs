@@ -22,6 +22,7 @@ public static class DatabaseInitializer
             SqliteConnection.ClearAllPools();
         }
         await db.Database.MigrateAsync(ct);
+        await RoleSeeder.SeedAsync(db);
         await TemplateSeeder.SeedAsync(db, Path.Combine(AppContext.BaseDirectory, "templates"), logger, now);
         if (services.GetRequiredService<IOptions<DemoOptions>>().Value.Enabled)
             await DemoSeeder.SeedAsync(db, hasher, now);

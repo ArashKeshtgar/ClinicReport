@@ -356,3 +356,30 @@ table.measurements tr.flagged td:nth-child(2) { font-weight: 700; }
   .sample-patient { grid-template-columns: repeat(2, 1fr); }
   .children { margin-left: .4rem; }
 }
+
+/* users, roles, audit, account */
+.users-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); gap: 1rem; align-items: start; }
+.users-layout:not(:has(.user-editor)) { grid-template-columns: 1fr; }
+.user-editor { position: sticky; top: 3.8rem; max-height: calc(100vh - 5rem); overflow: auto; }
+table.grid tr.selected td { background: var(--accent-soft); }
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: .5rem .8rem .7rem; margin: 0; display: flex; flex-direction: column; gap: .4rem; }
+legend { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 .3rem; }
+label.check span { color: var(--text); }
+label.check.perm, fieldset label.check { align-items: flex-start; }
+label.check input { margin-top: .2rem; }
+.badge.tiny { font-size: .65rem; padding: 0 .35rem; margin-left: .35rem; }
+.security-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.role-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .6rem; }
+.role-card { flex-direction: column; align-items: stretch; text-align: left; white-space: normal; gap: .35rem; padding: .8rem .9rem; }
+.role-card.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.nowrap { white-space: nowrap; }
+.inline-label { flex-direction: row; align-items: center; gap: .4rem; }
+.inline-label input { width: auto; }
+.account-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; align-items: start; }
+.two-factor-setup .steps { padding-left: 1.2rem; display: flex; flex-direction: column; gap: .6rem; margin: 0; }
+.qr-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .4rem; }
+.qr-row img { background: #fff; padding: 6px; border-radius: 6px; }
+.secret { font-family: var(--mono-font); font-size: .95rem; letter-spacing: .05em; word-break: break-all; max-width: 14rem; }
+.code-row { display: flex; gap: .5rem; margin-top: .4rem; }
+.code-row input { width: 9rem; font-family: var(--mono-font); letter-spacing: .15em; text-align: center; }
+@media (max-width: 1000px) { .users-layout { grid-template-columns: 1fr; } .user-editor { position: static; max-height: none; } }

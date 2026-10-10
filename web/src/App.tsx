@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router'
-import { api, type Me, type Settings } from './api'
+import { api, can, type Me, type Settings } from './api'
 import Login from './pages/Login'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
@@ -10,10 +10,12 @@ import Templates from './pages/Templates'
 import TemplateDesigner from './pages/TemplateDesigner'
 import Users from './pages/Users'
 import Account from './pages/Account'
+import Audit from './pages/Audit'
+import PendingActionPage from './pages/PendingAction'
 import { Logo } from './components/Logo'
 import { applyTheme, savedTheme, type Theme } from './theme'
 
-type Session = { me: Me; settings: Settings; signOut: () => Promise<void> }
+type Session = { me: Me; settings: Settings; signOut: () => Promise<void>; refreshMe: (me: Me) => void }
 const SessionContext = createContext<Session | null>(null)
 
 export function useSession(): Session {
@@ -49,10 +51,11 @@ export default function App() {
 
   if (!settings || me === undefined) return <div className="center muted">Loading…</div>
   if (!me) return <Login settings={settings} onSignedIn={setMe} />
+  if (me.pendingAction) return <PendingActionPage me={me} settings={settings} onDone={setMe} onSignOut={signOut} />
 
   const printing = location.pathname.endsWith('/print')
   return (
-    <SessionContext.Provider value={{ me, settings, signOut }}>
+    <SessionContext.Provider value={{ me, settings, signOut, refreshMe: setMe }}>
       {!printing && <TopBar />}
       {!printing && settings.demo && (
         <div className="demo-banner" role="note">
@@ -66,8 +69,9 @@ export default function App() {
           <Route path="/reports/:id" element={<ReportEditor />} />
           <Route path="/reports/:id/print" element={<PrintReport />} />
           <Route path="/templates" element={<Templates />} />
-          <Route path="/templates/:id" element={me.role === 'Admin' ? <TemplateDesigner /> : <Navigate to="/templates" />} />
-          <Route path="/users" element={me.role === 'Admin' ? <Users /> : <Navigate to="/" />} />
+          <Route path="/templates/:id" element={can(me, 'templates.design') ? <TemplateDesigner /> : <Navigate to="/templates" />} />
+          <Route path="/users" element={can(me, 'users.manage') ? <Users /> : <Navigate to="/" />} />
+          <Route path="/audit" element={can(me, 'audit.view') ? <Audit /> : <Navigate to="/" />} />
           <Route path="/account" element={<Account />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
@@ -88,11 +92,12 @@ function TopBar() {
       <nav>
         <NavLink to="/" end>Worklist</NavLink>
         <NavLink to="/templates">Templates</NavLink>
-        {me.role === 'Admin' && <NavLink to="/users">Users</NavLink>}
+        {can(me, 'users.manage') && <NavLink to="/users">Users &amp; roles</NavLink>}
+        {can(me, 'audit.view') && <NavLink to="/audit">Audit log</NavLink>}
       </nav>
       <div className="who">
         <ThemeToggle />
-        <NavLink to="/account" className="who-name">{me.displayName} <span className="muted">· {me.role}</span></NavLink>
+        <NavLink to="/account" className="who-name">{me.displayName} <span className="muted">· {me.roles.join(', ')}</span></NavLink>
         <button className="link" onClick={signOut}>Sign out</button>
       </div>
     </header>

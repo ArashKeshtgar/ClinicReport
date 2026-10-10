@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ageOn, api, ApiError, formatDateTime, type Change, type Header, type Report } from '../api'
+import { ageOn, api, ApiError, can, formatDateTime, type Change, type Header, type Report } from '../api'
 import { useSession } from '../App'
 import { FieldInput, isNumberText, type FieldContext } from '../components/FieldInput'
 import { ReportView } from '../components/ReportView'
@@ -145,7 +145,7 @@ export default function ReportEditor() {
   if (error && !report) return <p className="error">{error}</p>
   if (!report) return <p className="muted">Loading…</p>
 
-  const readOnly = report.status !== 'Draft'
+  const readOnly = report.status !== 'Draft' || !can(me, 'reports.edit')
   const myConnection = live.myConnectionId()
   const others = live.viewers.filter(v => v.connectionId !== myConnection)
   const othersIn: Record<string, string[]> = {}
@@ -199,8 +199,9 @@ export default function ReportEditor() {
           <div className="muted small">Started by {report.createdBy} · {formatDateTime(report.createdAt)}</div>
         </div>
         <div className="status-block">
-          {readOnly
+          {report.status === 'Final'
             ? <span className="badge ok">Signed</span>
+            : readOnly ? <span className="badge">Read only</span>
             : <span className={`save-state ${saveState}`}>{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Not saved' : 'All changes saved'}</span>}
           <span className={`live-dot ${live.connected ? 'on' : ''}`} title={live.connected ? 'Live: changes from others appear instantly' : 'Reconnecting…'} />
           {others.length > 0 && (
@@ -215,7 +216,7 @@ export default function ReportEditor() {
 
       {error && <p className="error banner" role="alert">{error} <button className="link" onClick={() => setError(null)}>Dismiss</button></p>}
 
-      {readOnly && (
+      {report.status === 'Final' && (
         <div className="signed-banner">
           Signed by <strong>{report.signedBy}</strong>{report.signedByCredentials ? `, ${report.signedByCredentials}` : ''} on {formatDateTime(report.signedAt)}.
           <Link to={`/reports/${id}/print`} className="button">Print / PDF</Link>
@@ -272,8 +273,8 @@ export default function ReportEditor() {
               </div>
             )}
 
-            {!readOnly && (
-              me.role === 'Physician'
+            {report.status === 'Draft' && (
+              can(me, 'reports.sign')
                 ? <button className="primary wide" onClick={sign}>Sign report</button>
                 : <p className="muted small">A physician reviews and signs this report.</p>
             )}
@@ -286,7 +287,7 @@ export default function ReportEditor() {
                 ))}
               </section>
             )}
-            {readOnly && me.role === 'Physician' && <AddendumForm reportId={id} onSaved={accept} />}
+            {report.status === 'Final' && can(me, 'reports.sign') && <AddendumForm reportId={id} onSaved={accept} />}
 
             <button className="link small" onClick={() => setShowHistory(h => !h)}>{showHistory ? 'Hide' : 'Show'} change history</button>
             {showHistory && <History reportId={id} revision={report.revision} fields={allFields(report.definition)} />}

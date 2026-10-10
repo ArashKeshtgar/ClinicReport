@@ -25,6 +25,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<SecurityLog>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHostedService<DemoResetService>();
 builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
@@ -56,6 +58,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UsePendingActionGate();
 app.UseAuthorization();
 app.UseCsrfHeaderCheck();
 
@@ -63,6 +66,7 @@ app.MapGet("/api/settings", (IOptions<ClinicOptions> clinic, IOptions<DemoOption
 {
     clinic.Value.Name, clinic.Value.Address, clinic.Value.Phone, clinic.Value.ReportFooter,
     Demo = demo.Value.Enabled,
+    AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,
     DemoUsers = demo.Value.Enabled ? DemoSeeder.DemoUserNames : [],
 }).AllowAnonymous();
 

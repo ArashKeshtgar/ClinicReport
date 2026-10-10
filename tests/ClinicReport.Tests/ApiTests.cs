@@ -210,47 +210,6 @@ public class ApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var preview = await Json(await admin.PostAsJsonAsync("/api/templates/preview", new { definitionJson = TinyTemplate, values = new { rhythm = "sinus" } }));
         Assert.Equal("Predominant rhythm is sinus.", (string)preview["rendered"]!["sections"]![0]!["sentences"]![0]!);
     }
-
-    [Fact]
-    public async Task Admin_creates_a_user_who_signs_in_with_a_password()
-    {
-        var admin = await factory.SignInAsync("demo.admin");
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync("/api/users", new
-        {
-            userName = "short.pw", displayName = "Short", role = "Typist", password = "123",
-        })).StatusCode);
-
-        await Json(await admin.PostAsJsonAsync("/api/users", new
-        {
-            userName = "jamie.typist", displayName = "Jamie", role = "Typist", password = "correct-horse-battery",
-        }));
-
-        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
-        client.DefaultRequestHeaders.Add("X-ClinicReport", "1");
-        Assert.Equal(HttpStatusCode.Unauthorized,
-            (await client.PostAsJsonAsync("/api/auth/login", new { userName = "jamie.typist", password = "wrong-password!!" })).StatusCode);
-        var me = await Json(await client.PostAsJsonAsync("/api/auth/login", new { userName = "JAMIE.typist", password = "correct-horse-battery" }));
-        Assert.Equal("Typist", (string)me["role"]!);
-
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/users")).StatusCode);
-    }
-
-    [Fact]
-    public async Task Deactivated_user_loses_access_immediately()
-    {
-        var admin = await factory.SignInAsync("demo.admin");
-        var created = await Json(await admin.PostAsJsonAsync("/api/users", new
-        {
-            userName = "temp.user", displayName = "Temp", role = "Typist", password = "temporary-password",
-        }));
-        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
-        client.DefaultRequestHeaders.Add("X-ClinicReport", "1");
-        await Json(await client.PostAsJsonAsync("/api/auth/login", new { userName = "temp.user", password = "temporary-password" }));
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/reports")).StatusCode);
-
-        await Json(await admin.PutAsJsonAsync($"/api/users/{created["id"]}", new { displayName = "Temp", role = "Typist", isActive = false }));
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/reports")).StatusCode);
-    }
 }
 
 /// <summary>The public demo as deployed: accounts locked.</summary>

@@ -5,12 +5,15 @@ import { Logo } from '../components/Logo'
 const DEMO_LABELS: Record<string, { title: string; text: string }> = {
   'demo.typist': { title: 'Typist', text: 'Fills reports while the study is done.' },
   'demo.physician': { title: 'Physician', text: 'Reviews, writes the conclusion and signs.' },
-  'demo.admin': { title: 'Administrator', text: 'Designs templates and manages users.' },
+  'demo.admin': { title: 'Administrator', text: 'Templates, users, roles and the audit log.' },
+  'demo.echo': { title: 'Echo-only typist', text: 'A typist limited to echocardiography: sees nothing else.' },
 }
 
 export default function Login({ settings, onSignedIn }: { settings: Settings; onSignedIn: (me: Me) => void }) {
   const [userName, setUserName] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [needCode, setNeedCode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -20,6 +23,12 @@ export default function Login({ settings, onSignedIn }: { settings: Settings; on
     try {
       onSignedIn(await action())
     } catch (e) {
+      if (e instanceof ApiError && e.data.twoFactorRequired) {
+        // First answer of a two-factor account: ask for the code without showing an error.
+        if (needCode) setError(e.message)
+        setNeedCode(true)
+        return
+      }
       setError(e instanceof ApiError ? e.message : 'Could not sign in.')
     } finally {
       setBusy(false)
@@ -28,7 +37,7 @@ export default function Login({ settings, onSignedIn }: { settings: Settings; on
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    run(() => api.login(userName, password))
+    run(() => api.login(userName, password, needCode ? code : undefined))
   }
 
   return (
@@ -55,6 +64,13 @@ export default function Login({ settings, onSignedIn }: { settings: Settings; on
         <form onSubmit={submit} className="stack">
           <label>User name<input value={userName} onChange={e => setUserName(e.target.value)} autoComplete="username" autoFocus={!settings.demo} required /></label>
           <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+          {needCode && (
+            <label>Authenticator code
+              <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} value={code}
+                onChange={e => setCode(e.target.value)} autoFocus required placeholder="123 456" />
+              <span className="muted small">The 6-digit code from your authenticator app.</span>
+            </label>
+          )}
           {error && <p className="error" role="alert">{error}</p>}
           <button className="primary" disabled={busy}>Sign in</button>
         </form>

@@ -35,16 +35,42 @@ namespace ClinicReport.Api.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("FailedLoginCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LockoutEndUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("MustChangePassword")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Role")
+                    b.Property<string>("SecurityStamp")
                         .IsRequired()
-                        .HasMaxLength(16)
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Services")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("TwoFactorEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TwoFactorLastStep")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TwoFactorSecret")
+                        .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("UserName")
@@ -275,6 +301,86 @@ namespace ClinicReport.Api.Data.Migrations
                     b.ToTable("Templates");
                 });
 
+            modelBuilder.Entity("ClinicReport.Api.Data.Role", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<string>("Permissions")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RequireTwoFactor")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.SecurityEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PatientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ReportId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TargetUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("ActorUserId", "At");
+
+                    b.HasIndex("ReportId", "At");
+
+                    b.ToTable("SecurityEvents");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.TemplateVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -311,6 +417,21 @@ namespace ClinicReport.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("TemplateVersions");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.UserRole", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RoleId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("UserId", "RoleId");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("UserRoles");
                 });
 
             modelBuilder.Entity("ClinicReport.Api.Data.Report", b =>
@@ -390,6 +511,30 @@ namespace ClinicReport.Api.Data.Migrations
                     b.Navigation("Template");
                 });
 
+            modelBuilder.Entity("ClinicReport.Api.Data.UserRole", b =>
+                {
+                    b.HasOne("ClinicReport.Api.Data.Role", "Role")
+                        .WithMany("Users")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ClinicReport.Api.Data.AppUser", "User")
+                        .WithMany("Roles")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.AppUser", b =>
+                {
+                    b.Navigation("Roles");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.Report", b =>
                 {
                     b.Navigation("Addenda");
@@ -398,6 +543,11 @@ namespace ClinicReport.Api.Data.Migrations
             modelBuilder.Entity("ClinicReport.Api.Data.ReportTemplate", b =>
                 {
                     b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.Role", b =>
+                {
+                    b.Navigation("Users");
                 });
 #pragma warning restore 612, 618
         }

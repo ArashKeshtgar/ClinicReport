@@ -147,6 +147,10 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
             r.SignedAt = clock.GetUtcNow().UtcDateTime;
             r.SignedSnapshotJson = JsonSerializer.Serialize(rendered, TemplateDefinition.JsonOptions);
             log("$status", JsonSerializer.SerializeToElement(ReportStatus.Final));
+            db.SecurityEvents.Add(new SecurityEvent
+            {
+                At = r.SignedAt.Value, Type = SecurityEventTypes.ReportSigned, ActorUserId = userId, ReportId = r.Id, PatientId = r.PatientId,
+            });
         });
 
     public async Task<ReportDto> AddAddendumAsync(int id, string text, int userId, CancellationToken ct)

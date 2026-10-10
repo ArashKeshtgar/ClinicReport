@@ -25,10 +25,15 @@ public static class ReportEndpoints
     public static void MapReportEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/reports").WithTags("Reports");
+        // Every /{id} route: the report must exist and belong to a service the user may work on;
+        // otherwise it answers 404, as if the report were not there.
+        var one = api.MapGroup("/{id:int}").AddEndpointFilter(ServiceAccessFilter);
 
-        api.MapGet("/", async (string? status, DateOnly? from, DateOnly? to, string? q, ClinicReportDbContext db) =>
+        api.MapGet("/", async (string? status, DateOnly? from, DateOnly? to, string? q, ClaimsPrincipal user, ClinicReportDbContext db) =>
         {
             var query = db.Reports.AsNoTracking();
+            if (user.ServiceScope() is { } services)
+                query = query.Where(r => services.Contains(r.TemplateVersion.Template.Service));
             if (!string.IsNullOrEmpty(status))
                 query = query.Where(r => r.Status == status);
             if (from is not null)
@@ -48,17 +53,17 @@ public static class ReportEndpoints
                     r.TemplateVersion.Template.Name, r.TemplateVersion.Template.Service,
                     r.CreatedBy.DisplayName, r.UpdatedAt, r.SignedBy != null ? r.SignedBy.DisplayName : null, r.SignedAt))
                 .ToListAsync();
-        });
+        }).RequireAuthorization(Permissions.ReportsView);
 
         api.MapPost("/", async (CreateReport req, ClaimsPrincipal user, ClinicReportDbContext db, ReportService reports, TimeProvider clock, CancellationToken ct) =>
         {
             var errors = new Dictionary<string, string[]>();
             if (!await db.Patients.AnyAsync(p => p.Id == req.PatientId, ct))
                 errors["patientId"] = ["Pick a patient."];
-            var version = await db.TemplateVersions
+            var version = await db.TemplateVersions.Include(v => v.Template)
                 .Where(v => v.TemplateId == req.TemplateId && v.Status == TemplateStatus.Published && v.Template.IsActive)
                 .OrderByDescending(v => v.Version).FirstOrDefaultAsync(ct);
-            if (version is null)
+            if (version is null || !user.CanAccessService(version.Template.Service))
                 errors["templateId"] = ["Pick an active, published template."];
             if (errors.Count > 0)
                 return Results.ValidationProblem(errors);
@@ -76,35 +81,55 @@ public static class ReportEndpoints
             var dto = await reports.SetHeaderAsync(report.Id,
                 new HeaderDto(req.ExamDate, req.Indication, req.ReferringPhysician, req.HeightCm, req.WeightKg), user.RequiredUserId(), null, ct);
             return Results.Created($"/api/reports/{report.Id}", dto);
-        });
+        }).RequireAuthorization(Permissions.ReportsCreate);
 
-        api.MapGet("/{id:int}", async (int id, ReportService reports, CancellationToken ct) =>
-            await reports.LoadAsync(id, ct) is { } r ? Results.Ok(ReportService.ToDto(r)) : Results.NotFound());
+        one.MapGet("", async (int id, ClaimsPrincipal user, ReportService reports, SecurityLog log, CancellationToken ct) =>
+        {
+            if (await reports.LoadAsync(id, ct) is not { } r)
+                return Results.NotFound();
+            await log.ReportViewedAsync(user.RequiredUserId(), r.Id, r.PatientId, ct);
+            return Results.Ok(ReportService.ToDto(r));
+        }).RequireAuthorization(Permissions.ReportsView);
 
-        api.MapPatch("/{id:int}/values", (int id, ValuesBody body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
+        var edit = one.MapGroup("").RequireAuthorization(Permissions.ReportsEdit);
+
+        edit.MapPatch("/values", (int id, ValuesBody body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
             reports.SetValuesAsync(id, body.Values ?? [], user.RequiredUserId(), ClientId(http), ct));
 
-        api.MapPost("/{id:int}/presets/{sectionId}", (int id, string sectionId, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
+        edit.MapPost("/presets/{sectionId}", (int id, string sectionId, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
             reports.ApplyPresetAsync(id, sectionId, user.RequiredUserId(), ClientId(http), ct));
 
-        api.MapPut("/{id:int}/header", (int id, HeaderDto body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
+        edit.MapPut("/header", (int id, HeaderDto body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
             reports.SetHeaderAsync(id, body, user.RequiredUserId(), ClientId(http), ct));
 
-        api.MapPut("/{id:int}/conclusion", (int id, ConclusionBody body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
+        edit.MapPut("/conclusion", (int id, ConclusionBody body, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
             reports.SetConclusionAsync(id, body.Conclusion, user.RequiredUserId(), ClientId(http), ct));
 
-        api.MapPost("/{id:int}/sign", (int id, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
+        one.MapPost("/sign", (int id, ClaimsPrincipal user, HttpRequest http, ReportService reports, CancellationToken ct) =>
             reports.SignAsync(id, user.RequiredUserId(), ClientId(http), ct))
-            .RequireAuthorization(Policies.Sign);
+            .RequireAuthorization(Permissions.ReportsSign);
 
-        api.MapPost("/{id:int}/addenda", (int id, AddendumBody body, ClaimsPrincipal user, ReportService reports, CancellationToken ct) =>
+        one.MapPost("/addenda", (int id, AddendumBody body, ClaimsPrincipal user, ReportService reports, CancellationToken ct) =>
             reports.AddAddendumAsync(id, body.Text, user.RequiredUserId(), ct))
-            .RequireAuthorization(Policies.Sign);
+            .RequireAuthorization(Permissions.ReportsSign);
 
-        api.MapGet("/{id:int}/history", async (int id, ClinicReportDbContext db, CancellationToken ct) =>
+        one.MapGet("/history", async (int id, ClinicReportDbContext db, CancellationToken ct) =>
             await db.Changes.AsNoTracking().Where(c => c.ReportId == id).OrderByDescending(c => c.Id).Take(500)
                 .Join(db.Users, c => c.UserId, u => u.Id, (c, u) => new ChangeRow(c.At, u.DisplayName, c.Field, c.NewValueJson))
-                .ToListAsync(ct));
+                .ToListAsync(ct))
+            .RequireAuthorization(Permissions.ReportsView);
+    }
+
+    private static async ValueTask<object?> ServiceAccessFilter(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
+    {
+        var http = ctx.HttpContext;
+        if (!int.TryParse(http.Request.RouteValues["id"]?.ToString(), out var id))
+            return Results.NotFound();
+        var db = http.RequestServices.GetRequiredService<ClinicReportDbContext>();
+        var service = await db.Reports.Where(r => r.Id == id).Select(r => r.TemplateVersion.Template.Service).SingleOrDefaultAsync();
+        if (service is null || !http.User.CanAccessService(service))
+            return Results.NotFound();
+        return await next(ctx);
     }
 
     private static string? ClientId(HttpRequest http) =>

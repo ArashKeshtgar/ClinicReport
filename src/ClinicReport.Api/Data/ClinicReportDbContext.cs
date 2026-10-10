@@ -11,6 +11,9 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ReportAddendum> Addenda => Set<ReportAddendum>();
     public DbSet<ReportChange> Changes => Set<ReportChange>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
+    public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -20,7 +23,34 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
             e.HasIndex(u => u.UserName).IsUnique();
             e.Property(u => u.DisplayName).HasMaxLength(128);
             e.Property(u => u.Credentials).HasMaxLength(64);
-            e.Property(u => u.Role).HasMaxLength(16);
+            e.Property(u => u.Services).HasMaxLength(2000);
+            e.Property(u => u.SecurityStamp).HasMaxLength(64);
+            e.Property(u => u.TwoFactorSecret).HasMaxLength(1000);
+        });
+
+        b.Entity<Role>(e =>
+        {
+            e.Property(r => r.Name).HasMaxLength(64).UseCollation("NOCASE");
+            e.HasIndex(r => r.Name).IsUnique();
+            e.Property(r => r.Description).HasMaxLength(300);
+            e.Property(r => r.Permissions).HasMaxLength(1000);
+        });
+
+        b.Entity<UserRole>(e =>
+        {
+            e.HasKey(ur => new { ur.UserId, ur.RoleId });
+            e.HasOne(ur => ur.User).WithMany(u => u.Roles).HasForeignKey(ur => ur.UserId);
+            e.HasOne(ur => ur.Role).WithMany(r => r.Users).HasForeignKey(ur => ur.RoleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<SecurityEvent>(e =>
+        {
+            e.Property(x => x.Type).HasMaxLength(32);
+            e.Property(x => x.Detail).HasMaxLength(500);
+            e.Property(x => x.IpAddress).HasMaxLength(64);
+            e.HasIndex(x => x.At);
+            e.HasIndex(x => new { x.ActorUserId, x.At });
+            e.HasIndex(x => new { x.ReportId, x.At });
         });
 
         b.Entity<Patient>(e =>

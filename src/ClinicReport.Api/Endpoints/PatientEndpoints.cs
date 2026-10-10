@@ -16,7 +16,7 @@ public static class PatientEndpoints
 
     public static void MapPatientEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/patients").WithTags("Patients");
+        var api = app.MapGroup("/api/patients").WithTags("Patients").RequireAuthorization(Auth.AuthSetup.PatientsRead);
 
         api.MapGet("/", async (string? q, ClinicReportDbContext db) =>
         {
@@ -45,7 +45,7 @@ public static class PatientEndpoints
             db.Patients.Add(p);
             await db.SaveChangesAsync();
             return Results.Created($"/api/patients/{p.Id}", new PatientDto(p.Id, p.Mrn, p.FirstName, p.LastName, p.DateOfBirth, p.Sex));
-        });
+        }).RequireAuthorization(Auth.Permissions.PatientsManage);
 
         api.MapPut("/{id:int}", async (int id, SavePatient req, ClinicReportDbContext db, TimeProvider clock) =>
         {
@@ -57,7 +57,7 @@ public static class PatientEndpoints
             Apply(p, req);
             await db.SaveChangesAsync();
             return Results.Ok(new PatientDto(p.Id, p.Mrn, p.FirstName, p.LastName, p.DateOfBirth, p.Sex));
-        });
+        }).RequireAuthorization(Auth.Permissions.PatientsManage);
     }
 
     private static void Apply(Patient p, SavePatient req)

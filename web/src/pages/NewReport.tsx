@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { ageOn, api, ApiError, today, type Patient, type Sex, type TemplateSummary } from '../api'
+import { ageOn, api, ApiError, can, today, type Patient, type Sex, type TemplateSummary } from '../api'
+import { useSession } from '../App'
 
 export default function NewReport() {
   const navigate = useNavigate()
@@ -91,6 +92,7 @@ export default function NewReport() {
 }
 
 function PatientPicker({ onPick }: { onPick: (p: Patient) => void }) {
+  const { me } = useSession()
   const [q, setQ] = useState('')
   const [results, setResults] = useState<Patient[]>([])
   const [adding, setAdding] = useState(false)
@@ -116,7 +118,7 @@ function PatientPicker({ onPick }: { onPick: (p: Patient) => void }) {
         ))}
         {results.length === 0 && <li className="muted small pad-s">No match.</li>}
       </ul>
-      <button type="button" className="link" onClick={() => setAdding(true)}>+ New patient</button>
+      {can(me, 'patients.manage') && <button type="button" className="link" onClick={() => setAdding(true)}>+ New patient</button>}
     </div>
   )
 }

@@ -29,7 +29,15 @@ calculated, and abnormal findings can be pulled into the conclusion with one cli
   values, and a conclusion draft from the abnormal findings.
 - **Sign-off** – only physicians sign. Required fields and a conclusion are enforced. Signing freezes the
   rendered text; later corrections are signed addenda.
-- **Audit trail** – every field change is recorded with user and time.
+- **Users, roles and permissions** – roles are built from eight permissions (view, start, fill or sign
+  reports; manage patients; design templates; manage users; view the audit log), users can hold several
+  roles, and each user can be limited to some services (e.g. a typist who only sees echocardiography).
+  Built-in Administrator, Physician and Typist roles; add your own.
+- **Account security** – temporary passwords that must be changed at first sign-in, lockout after five
+  failed attempts, two-factor sign-in with any authenticator app (can be required per role), "sign out
+  everywhere", and immediate effect when an admin deactivates a user or changes their roles.
+- **Audit trail** – every field change is recorded with user and time, and a separate security log
+  records sign-ins, account and role changes, report signing, and who opened which patient's report.
 - **Print / PDF** – A4 print layout with clinic header and electronic signature line.
 - **Self-hosted, small** – one Docker container, SQLite database in a volume. No external services.
 
@@ -50,8 +58,10 @@ docker compose up -d
 docker compose logs clinicreport   # shows the generated admin password on first start
 ```
 
-Open http://localhost:8080, sign in as `admin`, change the password (top-right → your name), and add
-users under **Users**: typists, physicians (with credentials, printed under the signature) and admins.
+Open http://localhost:8080 and sign in as `admin` with that password; you are asked to choose your own
+right away. Then add people under **Users & roles**: give each one a role (or several), limit them to some
+services if needed, and hand them the temporary password. Physicians' credentials are printed under the
+signature. Consider requiring two-factor sign-in for the Physician and Administrator roles.
 
 Configuration is by environment variable (see [`docker-compose.yml`](docker-compose.yml)):
 

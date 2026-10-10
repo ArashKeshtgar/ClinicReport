@@ -39,14 +39,15 @@ public class PresenceTracker
 /// Live channel for an open report. Changes themselves go through the REST API (so they are validated
 /// and audited in one place); the hub only carries presence and the "reportChanged" broadcasts.
 /// </summary>
-[Authorize]
+[Authorize(Policy = Permissions.ReportsView)]
 public class ReportHub(PresenceTracker presence, ClinicReportDbContext db) : Hub
 {
     public static string GroupName(int reportId) => $"report-{reportId}";
 
     public async Task JoinReport(int reportId)
     {
-        if (!await db.Reports.AnyAsync(r => r.Id == reportId))
+        var service = await db.Reports.Where(r => r.Id == reportId).Select(r => r.TemplateVersion.Template.Service).SingleOrDefaultAsync();
+        if (service is null || !Context.User!.CanAccessService(service))
             throw new HubException("Report not found.");
 
         if (presence.ReportOf(Context.ConnectionId) is { } previous && previous != reportId)
@@ -54,7 +55,7 @@ public class ReportHub(PresenceTracker presence, ClinicReportDbContext db) : Hub
 
         var user = Context.User!;
         presence.Join(reportId, new Viewer(Context.ConnectionId, user.RequiredUserId(), user.Identity!.Name ?? "?",
-            user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "", null));
+            string.Join(", ", user.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value)), null));
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(reportId));
         await BroadcastPresence(reportId);
     }

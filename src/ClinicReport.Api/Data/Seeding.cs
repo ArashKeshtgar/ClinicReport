@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using ClinicReport.Api.Auth;
 using ClinicReport.Api.Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -60,6 +61,36 @@ public static class TemplateSeeder
     }
 }
 
+/// <summary>
+/// Makes sure the built-in roles exist. Administrator always gets every permission (so a new permission
+/// added in a later version reaches it); the other built-in roles are only created, never overwritten,
+/// because a clinic may have changed them.
+/// </summary>
+public static class RoleSeeder
+{
+    public static async Task SeedAsync(ClinicReportDbContext db)
+    {
+        foreach (var (name, description, permissions, requireTwoFactor) in SystemRoles.Defaults)
+        {
+            var role = await db.Roles.SingleOrDefaultAsync(r => r.Name == name);
+            if (role is null)
+                db.Roles.Add(new Role
+                {
+                    Name = name, Description = description, Permissions = Permissions.Format(permissions),
+                    RequireTwoFactor = requireTwoFactor, IsSystem = true,
+                });
+            else if (name == SystemRoles.Administrator)
+            {
+                role.IsSystem = true;
+                role.Permissions = Permissions.Format(Permissions.All);
+            }
+        }
+        await db.SaveChangesAsync();
+    }
+
+    public static Task<Role> GetAsync(ClinicReportDbContext db, string name) => db.Roles.SingleAsync(r => r.Name == name);
+}
+
 /// <summary>On a brand-new database, creates the first admin so someone can sign in and add the real users.</summary>
 public static class UserBootstrap
 {
@@ -74,7 +105,11 @@ public static class UserBootstrap
         if (generated)
             password = RandomNumberGenerator.GetString("abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", 16);
 
-        var admin = new AppUser { UserName = userName, DisplayName = "Administrator", Role = Roles.Admin, CreatedAt = now };
+        var admin = new AppUser
+        {
+            UserName = userName, DisplayName = "Administrator", CreatedAt = now, MustChangePassword = true,
+            Roles = [new UserRole { Role = await RoleSeeder.GetAsync(db, SystemRoles.Administrator) }],
+        };
         admin.PasswordHash = hasher.HashPassword(admin, password!);
         db.Users.Add(admin);
         await db.SaveChangesAsync();
@@ -89,25 +124,39 @@ public static class UserBootstrap
 /// <summary>Synthetic data for the public demo: no real people, every MRN starts with DEMO-.</summary>
 public static class DemoSeeder
 {
-    public static readonly string[] DemoUserNames = ["demo.admin", "demo.physician", "demo.typist"];
+    public static readonly string[] DemoUserNames = ["demo.typist", "demo.physician", "demo.admin", "demo.echo"];
 
     public static async Task SeedAsync(ClinicReportDbContext db, IPasswordHasher<AppUser> hasher, DateTime now)
     {
-        if (await db.Users.AnyAsync(u => DemoUserNames.Contains(u.UserName)))
-            return;
-
-        AppUser User(string userName, string name, string role, string? credentials = null)
+        var roles = await db.Roles.ToDictionaryAsync(r => r.Name);
+        AppUser User(string userName, string name, string role, string? credentials = null, string? services = null)
         {
-            var u = new AppUser { UserName = userName, DisplayName = name, Role = role, Credentials = credentials, CreatedAt = now };
+            var u = new AppUser
+            {
+                UserName = userName, DisplayName = name, Credentials = credentials, CreatedAt = now, Services = services,
+                Roles = [new UserRole { Role = roles[role] }],
+            };
             // Demo users sign in with the one-click demo login; nobody knows this password.
             u.PasswordHash = hasher.HashPassword(u, RandomNumberGenerator.GetHexString(32));
             return u;
         }
 
-        var admin = User("demo.admin", "Demo Administrator", Roles.Admin);
-        var physician = User("demo.physician", "Dr. Avery Morgan", Roles.Physician, "MD, FRCPC");
-        var typist = User("demo.typist", "Riley Chen", Roles.Typist);
-        db.Users.AddRange(admin, physician, typist);
+        var wanted = new[]
+        {
+            User("demo.admin", "Demo Administrator", SystemRoles.Administrator),
+            User("demo.physician", "Dr. Avery Morgan", SystemRoles.Physician, "MD, FRCPC"),
+            User("demo.typist", "Riley Chen", SystemRoles.Typist),
+            // Shows service scoping: this typist only sees echocardiography.
+            User("demo.echo", "Sam Rivera", SystemRoles.Typist, services: "Echocardiography"),
+        };
+        // Add demo users a newer version introduced; leave existing ones alone.
+        var existing = await db.Users.Where(u => DemoUserNames.Contains(u.UserName)).Select(u => u.UserName).ToListAsync();
+        db.Users.AddRange(wanted.Where(u => !existing.Contains(u.UserName)));
+        await db.SaveChangesAsync();
+
+        if (await db.Patients.AnyAsync(p => p.Mrn.StartsWith("DEMO-")))
+            return;
+        var typist = await db.Users.SingleAsync(u => u.UserName == "demo.typist");
 
         Patient P(int n, string first, string last, int year, int month, int day, string sex) => new()
         {

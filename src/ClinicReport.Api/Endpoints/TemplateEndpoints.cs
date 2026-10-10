@@ -33,13 +33,15 @@ public static class TemplateEndpoints
     public static void MapTemplateEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/templates").WithTags("Templates");
-        var admin = api.MapGroup("").RequireAuthorization(Policies.Admin);
+        var admin = api.MapGroup("").RequireAuthorization(Permissions.TemplatesDesign);
 
         api.MapGet("/", async (ClaimsPrincipal user, ClinicReportDbContext db) =>
         {
             var list = await db.Templates.AsNoTracking().Include(t => t.Versions).OrderBy(t => t.Service).ThenBy(t => t.Name).ToListAsync();
-            var all = user.IsInRole(Roles.Admin);
-            return list.Select(Summarize).Where(t => all || (t.IsActive && t.PublishedVersionId is not null));
+            // Designers see everything; everyone else sees what they can report on.
+            var designer = user.Can(Permissions.TemplatesDesign);
+            return list.Select(Summarize).Where(t => designer
+                || (t.IsActive && t.PublishedVersionId is not null && user.CanAccessService(t.Service)));
         });
 
         api.MapGet("/{id:int}", async (int id, ClinicReportDbContext db) =>

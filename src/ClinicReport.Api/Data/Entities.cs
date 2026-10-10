@@ -1,14 +1,5 @@
 namespace ClinicReport.Api.Data;
 
-public static class Roles
-{
-    public const string Admin = "Admin";         // templates and users
-    public const string Physician = "Physician"; // edits and signs reports
-    public const string Typist = "Typist";       // creates and fills reports
-
-    public static readonly string[] All = [Admin, Physician, Typist];
-}
-
 public static class ReportStatus
 {
     public const string Draft = "Draft";
@@ -30,10 +21,105 @@ public class AppUser
     /// <summary>Printed under the signature, e.g. "MD, FRCPC".</summary>
     public string? Credentials { get; set; }
 
-    public string Role { get; set; } = Roles.Typist;
     public string PasswordHash { get; set; } = "";
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+
+    public List<UserRole> Roles { get; set; } = [];
+
+    /// <summary>
+    /// Services (template "service" names, e.g. "Echocardiography") this user may work on, one per line.
+    /// Empty means every service.
+    /// </summary>
+    public string? Services { get; set; }
+
+    /// <summary>Changes whenever access should end for existing sessions (password, roles, deactivation, "sign out everywhere").</summary>
+    public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>Set by an admin-created or admin-reset password: the user must choose their own before doing anything else.</summary>
+    public bool MustChangePassword { get; set; }
+
+    public int FailedLoginCount { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
+
+    /// <summary>TOTP secret, encrypted with ASP.NET Data Protection. Null until set up.</summary>
+    public string? TwoFactorSecret { get; set; }
+    public bool TwoFactorEnabled { get; set; }
+
+    /// <summary>Last accepted TOTP time step, so a code cannot be replayed.</summary>
+    public long TwoFactorLastStep { get; set; }
+
+    public IReadOnlyList<string> ServiceList() =>
+        (Services ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+/// <summary>A named set of permissions, e.g. "Echo typist". Users can hold several.</summary>
+public class Role
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+
+    /// <summary>Space-separated permission keys (see Auth.Permissions).</summary>
+    public string Permissions { get; set; } = "";
+
+    /// <summary>Members must sign in with an authenticator code.</summary>
+    public bool RequireTwoFactor { get; set; }
+
+    /// <summary>Created by the installation; cannot be deleted. Administrator also keeps every permission.</summary>
+    public bool IsSystem { get; set; }
+
+    public List<UserRole> Users { get; set; } = [];
+}
+
+public class UserRole
+{
+    public int UserId { get; set; }
+    public AppUser User { get; set; } = null!;
+    public int RoleId { get; set; }
+    public Role Role { get; set; } = null!;
+}
+
+public static class SecurityEventTypes
+{
+    public const string LoginSucceeded = "LoginSucceeded";
+    public const string LoginFailed = "LoginFailed";
+    public const string LockedOut = "LockedOut";
+    public const string Logout = "Logout";
+    public const string PasswordChanged = "PasswordChanged";
+    public const string PasswordReset = "PasswordReset";
+    public const string TwoFactorEnabled = "TwoFactorEnabled";
+    public const string TwoFactorDisabled = "TwoFactorDisabled";
+    public const string TwoFactorReset = "TwoFactorReset";
+    public const string SessionsRevoked = "SessionsRevoked";
+    public const string UserCreated = "UserCreated";
+    public const string UserUpdated = "UserUpdated";
+    public const string UserUnlocked = "UserUnlocked";
+    public const string RoleCreated = "RoleCreated";
+    public const string RoleUpdated = "RoleUpdated";
+    public const string RoleDeleted = "RoleDeleted";
+    public const string ReportViewed = "ReportViewed";
+    public const string ReportSigned = "ReportSigned";
+}
+
+/// <summary>Security and privacy audit trail: sign-ins, account changes, and who opened which patient's report.</summary>
+public class SecurityEvent
+{
+    public long Id { get; set; }
+    public DateTime At { get; set; }
+    public string Type { get; set; } = "";
+
+    /// <summary>Who did it (null for a failed sign-in with an unknown user name).</summary>
+    public int? ActorUserId { get; set; }
+
+    /// <summary>The account it was done to, when that is someone else (e.g. an admin resetting a password).</summary>
+    public int? TargetUserId { get; set; }
+
+    public int? ReportId { get; set; }
+    public int? PatientId { get; set; }
+    public string? Detail { get; set; }
+    public string? IpAddress { get; set; }
 }
 
 public class Patient

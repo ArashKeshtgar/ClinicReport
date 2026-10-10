@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { api, formatDateTime, type WorklistRow } from '../api'
+import { api, can, formatDateTime, type WorklistRow } from '../api'
+import { useSession } from '../App'
 
 export default function Worklist() {
   const [rows, setRows] = useState<WorklistRow[] | null>(null)
@@ -8,6 +9,7 @@ export default function Worklist() {
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+  const { me } = useSession()
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -21,8 +23,11 @@ export default function Worklist() {
   return (
     <>
       <div className="page-head">
-        <h1>Worklist</h1>
-        <Link to="/reports/new" className="button primary">New report</Link>
+        <div>
+          <h1>Worklist</h1>
+          {me.services && <div className="muted small">Showing {me.services.join(', ')} only</div>}
+        </div>
+        {can(me, 'reports.create') && <Link to="/reports/new" className="button primary">New report</Link>}
       </div>
 
       <div className="toolbar">
@@ -38,7 +43,7 @@ export default function Worklist() {
       {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? (
         <div className="empty card">
           <p>No reports here.</p>
-          <Link to="/reports/new" className="button">Start a report</Link>
+          {can(me, 'reports.create') && <Link to="/reports/new" className="button">Start a report</Link>}
         </div>
       ) : (
         <div className="table-wrap card">

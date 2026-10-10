@@ -1,12 +1,23 @@
 // Typed client for ClinicReport.Api. Shapes mirror the C# records in src/ClinicReport.Api.
 import type { TemplateDefinition, Value, Values } from './template'
 
-export type Role = 'Admin' | 'Physician' | 'Typist'
-export type Me = { id: number; userName: string; displayName: string; credentials: string | null; role: Role }
+export type Permission =
+  | 'reports.view' | 'reports.create' | 'reports.edit' | 'reports.sign'
+  | 'patients.manage' | 'templates.design' | 'users.manage' | 'audit.view'
+
+export type PendingAction = 'change-password' | 'setup-two-factor'
+
+export type Me = {
+  id: number; userName: string; displayName: string; credentials: string | null
+  roles: string[]; permissions: Permission[]; services: string[] | null
+  twoFactorEnabled: boolean; twoFactorRequired: boolean; pendingAction: PendingAction | null
+}
+
+export const can = (me: Me, p: Permission) => me.permissions.includes(p)
 
 export type Settings = {
   name: string; address: string | null; phone: string | null; reportFooter: string | null
-  demo: boolean; demoUsers: string[]
+  demo: boolean; accountsLocked: boolean; demoUsers: string[]
 }
 
 export type Sex = 'M' | 'F' | 'X' | 'U'
@@ -53,13 +64,27 @@ export type WorklistRow = {
   templateName: string; service: string; createdBy: string; updatedAt: string; signedBy: string | null; signedAt: string | null
 }
 
-export type User = { id: number; userName: string; displayName: string; credentials: string | null; role: Role; isActive: boolean }
+export type User = {
+  id: number; userName: string; displayName: string; credentials: string | null; isActive: boolean
+  roleIds: number[]; roles: string[]; services: string[]; permissions: Permission[]
+  twoFactorEnabled: boolean; twoFactorRequired: boolean; mustChangePassword: boolean; isLockedOut: boolean
+  lastLoginAt: string | null; createdAt: string
+}
+
+export type RoleInfo = { id: number; name: string; description: string | null; permissions: Permission[]; requireTwoFactor: boolean; isSystem: boolean; userCount: number }
+
+export type PermissionInfo = { key: Permission; group: string; label: string; description: string }
+
+export type AuditRow = {
+  id: number; at: string; type: string; actor: string | null; target: string | null
+  reportId: number | null; patientId: number | null; patient: string | null; detail: string | null; ipAddress: string | null
+}
 
 export type Change = { at: string; user: string; field: string; value: string | null }
 
 /** Thrown for any non-2xx response. `fieldErrors` is filled for 400 validation problems. */
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}) {
+  constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}, public data: Record<string, unknown> = {}) {
     super(message)
   }
 }
@@ -84,7 +109,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   if (!res.ok) {
     if (res.status === 401 && !url.startsWith('/api/auth/')) window.dispatchEvent(new Event('clinicreport:signed-out'))
     const message = data?.title && data?.detail ? `${data.title} ${data.detail}` : data?.title ?? data?.detail ?? `Request failed (${res.status})`
-    throw new ApiError(res.status, message, data?.errors ?? {})
+    throw new ApiError(res.status, message, data?.errors ?? {}, data ?? {})
   }
   return data as T
 }
@@ -100,10 +125,14 @@ const qs = (params: Record<string, string | undefined>) => {
 export const api = {
   settings: () => get<Settings>('/api/settings'),
   me: () => get<Me | undefined>('/api/auth/me'),
-  login: (userName: string, password: string) => request<Me>('POST', '/api/auth/login', { userName, password }),
+  login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),
   demoLogin: (userName: string) => request<Me>('POST', '/api/auth/demo-login', { userName }),
   logout: () => request<void>('POST', '/api/auth/logout'),
-  changePassword: (currentPassword: string, newPassword: string) => request<void>('POST', '/api/auth/password', { currentPassword, newPassword }),
+  changePassword: (currentPassword: string, newPassword: string) => request<Me>('POST', '/api/auth/password', { currentPassword, newPassword }),
+  twoFactorSetup: () => request<{ secret: string; otpAuthUri: string }>('POST', '/api/auth/two-factor/setup'),
+  twoFactorEnable: (code: string) => request<Me>('POST', '/api/auth/two-factor/enable', { code }),
+  twoFactorDisable: (password: string) => request<Me>('POST', '/api/auth/two-factor/disable', { password }),
+  revokeOtherSessions: () => request<void>('POST', '/api/auth/sessions/revoke'),
 
   patients: (q: string) => get<Patient[]>(`/api/patients${qs({ q })}`),
   createPatient: (p: Omit<Patient, 'id'>) => request<Patient>('POST', '/api/patients', p),
@@ -130,9 +159,22 @@ export const api = {
   history: (id: number) => get<Change[]>(`/api/reports/${id}/history`),
 
   users: () => get<User[]>('/api/users'),
-  createUser: (u: Omit<User, 'id' | 'isActive'> & { password: string }) => request<User>('POST', '/api/users', u),
-  updateUser: (id: number, u: Pick<User, 'displayName' | 'credentials' | 'role' | 'isActive'>) => request<User>('PUT', `/api/users/${id}`, u),
+  createUser: (u: { userName: string; displayName: string; credentials: string | null; roleIds: number[]; services: string[]; password: string }) =>
+    request<User>('POST', '/api/users', u),
+  updateUser: (id: number, u: { displayName: string; credentials: string | null; roleIds: number[]; services: string[]; isActive: boolean }) =>
+    request<User>('PUT', `/api/users/${id}`, u),
   resetPassword: (id: number, password: string) => request<void>('POST', `/api/users/${id}/password`, { password }),
+  unlockUser: (id: number) => request<void>('POST', `/api/users/${id}/unlock`),
+  resetTwoFactor: (id: number) => request<void>('POST', `/api/users/${id}/two-factor/reset`),
+  revokeSessions: (id: number) => request<void>('POST', `/api/users/${id}/sessions/revoke`),
+  roles: () => get<RoleInfo[]>('/api/roles'),
+  createRole: (r: { name: string; description: string | null; permissions: Permission[]; requireTwoFactor: boolean }) => request<RoleInfo>('POST', '/api/roles', r),
+  updateRole: (id: number, r: { name: string; description: string | null; permissions: Permission[]; requireTwoFactor: boolean }) => request<RoleInfo>('PUT', `/api/roles/${id}`, r),
+  deleteRole: (id: number) => request<void>('DELETE', `/api/roles/${id}`),
+  permissionCatalog: () => get<PermissionInfo[]>('/api/permissions'),
+  services: () => get<string[]>('/api/services'),
+  audit: (params: { type?: string; userId?: string; reportId?: string; from?: string; to?: string; before?: string }) =>
+    get<AuditRow[]>(`/api/audit${qs(params)}`),
 }
 
 export function ageOn(dob: string, on: string): number {

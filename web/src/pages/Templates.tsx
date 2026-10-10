@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { api, ApiError, type TemplateSummary } from '../api'
+import { api, ApiError, can, type TemplateSummary } from '../api'
 import { useSession } from '../App'
 
 const BLANK = (key: string, name: string, service: string) => JSON.stringify({
@@ -27,7 +27,7 @@ export default function Templates() {
   const [form, setForm] = useState({ name: '', service: '' })
   const [error, setError] = useState<string | null>(null)
   const file = useRef<HTMLInputElement>(null)
-  const isAdmin = me.role === 'Admin'
+  const isAdmin = can(me, 'templates.design')
 
   const load = () => api.templates().then(setList)
   useEffect(() => { load() }, [])
