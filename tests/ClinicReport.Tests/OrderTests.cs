@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ClinicReport.Tests;
 
@@ -117,5 +118,70 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         var outcome = JsonNode.Parse(await res.Content.ReadAsStringAsync())!;
         Assert.Equal("OperationOutcome", (string)outcome["resourceType"]!);
         Assert.Contains("mri-brain", (string)outcome["issue"]![0]!["diagnostics"]!);
+    }
+
+    [Fact]
+    public async Task A_signed_ordered_report_goes_back_to_ClinicHub_and_an_addendum_follows()
+    {
+        KeepSignedIn();
+        await Json(await Send(Bundle("901", "HV000777"), ConnectedFactory.ServiceToken("harbourview")));
+        var physician = await factory.SignInAsync("22", "dr.reader", "harbourview", Physician);
+        var order = (await Json(await physician.GetAsync("/api/orders"))).AsArray().Single(o => (string)o!["mrn"]! == "HV000777")!;
+        var id = (int)(await Json(await physician.PostAsync($"/api/orders/{(int)order["id"]!}/start", null)))["reportId"]!;
+        foreach (var section in new[] { "study", "lv", "rv", "mitral", "aortic", "tricuspid", "pericardium" })
+            (await physician.PostAsync($"/api/reports/{id}/presets/{section}", null)).EnsureSuccessStatusCode();
+        (await physician.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "Normal study. LVEF 60%." })).EnsureSuccessStatusCode();
+
+        // ClinicHub is down when the report is signed: the result waits.
+        factory.Hub.Down = true;
+        await Json(await physician.PostAsync($"/api/reports/{id}/sign", null));
+        var sender = factory.Services.GetRequiredService<ClinicReport.Api.Reports.ResultSender>();
+        Assert.Equal(0, await sender.SendAsync());
+
+        // Back up: the pause after the failure has to pass, so look at the message itself.
+        factory.Hub.Down = false;
+        await using (var db = factory.Services.GetRequiredService<ClinicReport.Api.Auth.ClinicReportDatabases>().Create("harbourview"))
+        {
+            var waiting = db.ResultMessages.Single(m => m.SentAt == null);
+            Assert.Equal(1, waiting.Attempts);
+            waiting.NextAttemptAt = null;
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(1, await sender.SendAsync());
+        var (token, body) = factory.Hub.Results.Last();
+        Assert.Equal("app-token", token);
+        var report = body["entry"]![0]!["resource"]!;
+        Assert.Equal("final", (string)report["status"]!);
+        Assert.Equal("901", (string)report["basedOn"]![0]!["identifier"]!["value"]!);
+        Assert.Equal("urn:clinichub:harbourview:service-request", (string)report["basedOn"]![0]!["identifier"]!["system"]!);
+        Assert.Equal("Normal study. LVEF 60%.", (string)report["conclusion"]!);
+        Assert.Equal($"https://report.test/reports/{id}/print", (string)report["presentedForm"]![0]!["url"]!);
+
+        await Json(await physician.PostAsJsonAsync($"/api/reports/{id}/addenda", new { text = "Trace mitral regurgitation." }));
+        Assert.Equal(1, await sender.SendAsync());
+        var amended = factory.Hub.Results.Last().Body["entry"]![0]!["resource"]!;
+        Assert.Equal("amended", (string)amended["status"]!);
+        Assert.Contains("Trace mitral regurgitation.", (string)amended["conclusion"]!);
+    }
+
+    [Fact]
+    public async Task A_report_not_ordered_through_ClinicHub_sends_nothing()
+    {
+        KeepSignedIn();
+        var physician = await factory.SignInAsync("23", "dr.other", "harbourview", Physician);
+        var before = factory.Hub.Results.Count;
+        var templates = (await Json(await physician.GetAsync("/api/templates"))).AsArray();
+        var patient = await Json(await physician.PostAsJsonAsync("/api/patients", new { mrn = "LOCAL-1", firstName = "A", lastName = "Walkin", dateOfBirth = "1970-01-01", sex = "M" }));
+        var report = await Json(await physician.PostAsJsonAsync("/api/reports", new
+        {
+            patientId = (int)patient["id"]!, templateId = (int)templates.Single(t => (string)t!["key"]! == "echo-tte")!["id"]!, examDate = "2026-10-11",
+        }));
+        var id = (int)report["id"]!;
+        foreach (var section in new[] { "study", "lv", "rv", "mitral", "aortic", "tricuspid", "pericardium" })
+            (await physician.PostAsync($"/api/reports/{id}/presets/{section}", null)).EnsureSuccessStatusCode();
+        (await physician.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "Normal." })).EnsureSuccessStatusCode();
+        await Json(await physician.PostAsync($"/api/reports/{id}/sign", null));
+        await factory.Services.GetRequiredService<ClinicReport.Api.Reports.ResultSender>().SendAsync();
+        Assert.Equal(before, factory.Hub.Results.Count);
     }
 }

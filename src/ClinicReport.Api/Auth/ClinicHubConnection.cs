@@ -35,6 +35,12 @@ public class ClinicHubOptions
 
     public bool RequireHttpsMetadata { get; set; } = true;
 
+    /// <summary>ClinicReport's own public address, for the link to the full report that goes back with each result.</summary>
+    public string? PublicUrl { get; set; }
+
+    /// <summary>How often waiting results are sent to ClinicHub. 0 turns the worker off (tests send on demand).</summary>
+    public int SendSeconds { get; set; } = 5;
+
     public bool Enabled => !string.IsNullOrWhiteSpace(Authority);
 }
 
@@ -103,6 +109,10 @@ public static class ClinicHubConnection
             return false;
 
         services.AddSingleton<ClinicReportDatabases>();
+        // Results back to ClinicHub, from each clinic's outbox.
+        services.AddHttpClient(Reports.ResultSender.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<Reports.ResultSender>();
+        services.AddHostedService<Reports.ResultSenderWorker>();
         // The database of the request is the signed-in person's clinic.
         services.AddScoped(sp =>
         {

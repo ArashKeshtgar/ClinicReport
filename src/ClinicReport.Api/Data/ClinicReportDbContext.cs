@@ -15,9 +15,18 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
     public DbSet<ReportOrder> ReportOrders => Set<ReportOrder>();
+    public DbSet<ResultMessage> ResultMessages => Set<ResultMessage>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<ResultMessage>(e =>
+        {
+            e.Property(m => m.Status).HasMaxLength(20);
+            e.Property(m => m.LastError).HasMaxLength(1000);
+            e.HasIndex(m => new { m.SentAt, m.NextAttemptAt });
+            e.HasOne(m => m.ReportOrder).WithMany().HasForeignKey(m => m.ReportOrderId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         b.Entity<ReportOrder>(e =>
         {
             e.Property(o => o.ExternalId).HasMaxLength(80);

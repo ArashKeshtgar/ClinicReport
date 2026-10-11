@@ -264,3 +264,20 @@ public class ReportOrder
     public int? ReportId { get; set; }
     public Report? Report { get; set; }
 }
+
+/// <summary>A result waiting to be sent to ClinicHub (connected mode): the outbox, saved with the signature or addendum.</summary>
+public class ResultMessage
+{
+    public int Id { get; set; }
+    public int ReportOrderId { get; set; }
+    public ReportOrder ReportOrder { get; set; } = null!;
+
+    /// <summary>final or amended (the FHIR DiagnosticReport status).</summary>
+    public string Status { get; set; } = "final";
+    public string PayloadJson { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime? SentAt { get; set; }
+    public int Attempts { get; set; }
+    public DateTime? NextAttemptAt { get; set; }
+    public string? LastError { get; set; }
+}

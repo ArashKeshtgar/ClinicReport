@@ -29,6 +29,9 @@ public class ConnectedFactory : WebApplicationFactory<Program>
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("clinicreport-connected-").FullName;
 
+    /// <summary>ClinicHub as the receiver of results: issues ClinicReport's token and records what it is sent.</summary>
+    public FakeClinicHub Hub { get; } = new();
+
     /// <summary>What ClinicHub's token endpoint answers to a refresh; null means "invalid_grant".</summary>
     public Func<HttpResponseMessage>? TokenEndpoint { get; set; }
 
@@ -40,6 +43,8 @@ public class ConnectedFactory : WebApplicationFactory<Program>
         builder.UseSetting("ClinicHub:DatabasePattern", $"Data Source={Path.Combine(_dir, "clinicreport-{clinic}.db")}");
         builder.UseSetting("ClinicHub:RecheckMinutes", "0");
         builder.UseSetting("Demo:Enabled", "false");
+        builder.UseSetting("ClinicHub:SendSeconds", "0");
+        builder.UseSetting("ClinicHub:PublicUrl", "https://report.test/");
         builder.ConfigureTestServices(services =>
         {
             services.PostConfigure<OpenIdConnectOptions>(ClinicHubConnection.Scheme, o =>
@@ -54,6 +59,8 @@ public class ConnectedFactory : WebApplicationFactory<Program>
                 o.Backchannel = new HttpClient(new Stub(this));
             });
             services.AddSingleton<IStartupFilter>(new HubSignInRoute());
+            // Results going to ClinicHub: its token endpoint and /fhir, answered here.
+            services.AddHttpClient(ClinicReport.Api.Reports.ResultSender.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Hub);
             // ClinicHub's service tokens: signed here with a test key instead of ClinicHub's published one.
             services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(ClinicHubConnection.ServiceScheme, o =>
             {
@@ -246,5 +253,28 @@ public class ConnectedTests(ConnectedFactory factory) : IClassFixture<ConnectedF
     public async Task A_bad_clinic_name_from_the_token_is_refused()
     {
         await Assert.ThrowsAnyAsync<Exception>(() => factory.SignInAsync("11", "x", "../escape", "reports.view"));
+    }
+}
+
+public sealed class FakeClinicHub : HttpMessageHandler
+{
+    public List<(string Token, JsonNode Body)> Results { get; } = [];
+    public bool Down { get; set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        if (request.RequestUri!.AbsolutePath == "/connect/token")
+        {
+            var form = await request.Content!.ReadAsStringAsync(ct);
+            Assert.Contains("grant_type=client_credentials", form);
+            Assert.Contains("scope=results", form);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { access_token = "app-token", expires_in = 3600, token_type = "Bearer" }) };
+        }
+        if (Down)
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!;
+        lock (Results)
+            Results.Add((request.Headers.Authorization?.Parameter ?? "", body));
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"resourceType":"Bundle","type":"transaction-response","entry":[]}""") };
     }
 }

@@ -4,6 +4,8 @@ using ClinicReport.Api.Data;
 using ClinicReport.Api.Domain;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using ClinicReport.Api.Auth;
 
 namespace ClinicReport.Api.Reports;
 
@@ -31,7 +33,7 @@ public class ReportRuleException(string message, int status = StatusCodes.Status
 /// changed what, saves with optimistic concurrency (two people typing at once never lose each other's
 /// fields), and pushes the new state to everyone who has the report open.
 /// </summary>
-public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock)
+public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub)
 {
     private const int MaxTextLength = 4000;
     private const int MaxSaveAttempts = 5;
@@ -131,9 +133,15 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
             log("$conclusion", r.Conclusion is null ? null : JsonSerializer.SerializeToElement(r.Conclusion));
         });
 
-    /// <summary>Freezes the report. Required fields must be answered and a conclusion written.</summary>
-    public Task<ReportDto> SignAsync(int id, int userId, string? clientId, CancellationToken ct) =>
-        MutateAsync(id, userId, clientId, ct, (r, log) =>
+    /// <summary>
+    /// Freezes the report. Required fields must be answered and a conclusion written. A report ordered through ClinicHub
+    /// also queues its result for ClinicHub, saved with the signature.
+    /// </summary>
+    public async Task<ReportDto> SignAsync(int id, int userId, string? clientId, CancellationToken ct)
+    {
+        var order = await db.ReportOrders.AsNoTracking().FirstOrDefaultAsync(o => o.ReportId == id, ct);
+        var signer = order is null ? null : await db.Users.FindAsync([userId], ct);
+        return await MutateAsync(id, userId, clientId, ct, (r, log) =>
         {
             var rendered = ReportRenderer.Render(
                 TemplateDefinition.Parse(r.TemplateVersion.DefinitionJson), ReportValues.FromJson(r.ValuesJson), ContextFor(r));
@@ -151,7 +159,13 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
             {
                 At = r.SignedAt.Value, Type = SecurityEventTypes.ReportSigned, ActorUserId = userId, ReportId = r.Id, PatientId = r.PatientId,
             });
+            if (order is not null)
+            {
+                r.SignedBy ??= signer;
+                ResultMessages.Enqueue(db, order, r, "final", [], clinicHub.Value.PublicUrl, r.SignedAt.Value);
+            }
         });
+    }
 
     public async Task<ReportDto> AddAddendumAsync(int id, string text, int userId, CancellationToken ct)
     {
@@ -169,6 +183,16 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
         db.Changes.Add(new ReportChange { ReportId = id, Field = "$addendum", NewValueJson = JsonSerializer.Serialize(text), UserId = userId, At = now });
         report.Revision++;
         report.UpdatedAt = now;
+        // An addendum to an ordered report goes to ClinicHub as an amended result.
+        if (await db.ReportOrders.AsNoTracking().FirstOrDefaultAsync(o => o.ReportId == id, ct) is { } order)
+        {
+            var full = (await LoadAsync(id, ct))!;
+            // The new addendum is already linked into the loaded report by EF; Distinct in case it is also only local.
+            var addenda = full.Addenda.Concat(db.Addenda.Local.Where(a => a.ReportId == id)).Distinct().ToList();
+            foreach (var a in addenda.Where(a => a.User is null))
+                a.User = await db.Users.FindAsync([a.UserId], ct) ?? a.User;
+            ResultMessages.Enqueue(db, order, full, "amended", addenda, clinicHub.Value.PublicUrl, now);
+        }
         await db.SaveChangesAsync(ct);
 
         var dto = ToDto((await LoadAsync(id, ct))!);

@@ -373,6 +373,49 @@ namespace ClinicReport.Api.Data.Migrations
                     b.ToTable("Templates");
                 });
 
+            modelBuilder.Entity("ClinicReport.Api.Data.ResultMessage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ReportOrderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportOrderId");
+
+                    b.HasIndex("SentAt", "NextAttemptAt");
+
+                    b.ToTable("ResultMessages");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.Role", b =>
                 {
                     b.Property<int>("Id")
@@ -596,6 +639,17 @@ namespace ClinicReport.Api.Data.Migrations
                     b.Navigation("Report");
 
                     b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.ResultMessage", b =>
+                {
+                    b.HasOne("ClinicReport.Api.Data.ReportOrder", "ReportOrder")
+                        .WithMany()
+                        .HasForeignKey("ReportOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReportOrder");
                 });
 
             modelBuilder.Entity("ClinicReport.Api.Data.TemplateVersion", b =>
