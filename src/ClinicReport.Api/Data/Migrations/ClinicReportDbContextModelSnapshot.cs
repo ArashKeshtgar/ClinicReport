@@ -283,6 +283,12 @@ namespace ClinicReport.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CancelReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ExternalId")
                         .IsRequired()
                         .HasMaxLength(80)

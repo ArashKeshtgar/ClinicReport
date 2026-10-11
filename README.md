@@ -137,6 +137,10 @@ conclusion, and a link to the full report at `ClinicHub:PublicUrl`); an addendum
 wait in the clinic database's outbox until ClinicHub accepts them; ClinicReport authenticates with its own client id
 and secret (client credentials, scope `results`).
 
+**Cancellation.** ClinicHub withdraws an exam by sending its ServiceRequest again with status `revoked`: it leaves the
+worklist if it has not been started; once its report is started the answer is `409`, and the clinic speaks to the
+reading physician.
+
 What stays here: the services a person may work on (e.g. echo only), turning someone's ClinicReport access off,
 and the report-access audit log, kept in each clinic's own database. Passwords, two-factor and roles are ClinicHub's;
 a person appears in ClinicReport's user list after their first sign-in.

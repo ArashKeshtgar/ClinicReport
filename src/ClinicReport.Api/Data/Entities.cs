@@ -263,6 +263,10 @@ public class ReportOrder
     public DateTime? OrderedAt { get; set; }
     public int? ReportId { get; set; }
     public Report? Report { get; set; }
+
+    /// <summary>Withdrawn by the ordering clinic before the exam was started.</summary>
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
 }
 
 /// <summary>A result waiting to be sent to ClinicHub (connected mode): the outbox, saved with the signature or addendum.</summary>

@@ -10,7 +10,8 @@ namespace ClinicReport.Api.Endpoints;
 /// <summary>
 /// Orders from ClinicHub (connected mode). ClinicHub posts a FHIR R4 transaction Bundle (the patient, the
 /// requesting physician and one ServiceRequest per exam) to /fhir; each exam waits on the worklist until someone
-/// starts its report.
+/// starts its report. The clinic withdraws an exam by sending its ServiceRequest again with status "revoked";
+/// once the report has been started, that is refused and the clinic is told to speak to the reader.
 /// </summary>
 public static class OrderEndpoints
 {
@@ -32,6 +33,11 @@ public static class OrderEndpoints
             if ((string?)bundle?["resourceType"] != "Bundle" || (string?)bundle["type"] != "transaction")
                 return Outcome("Expected a FHIR transaction Bundle.");
             var entries = bundle["entry"]?.AsArray().Select(e => e?["resource"]).ToList() ?? [];
+            var revoked = entries.Where(r => (string?)r?["resourceType"] == "ServiceRequest" && (string?)r?["status"] == "revoked").ToList();
+            if (revoked.Count > 0)
+                return revoked.Count == entries.Count
+                    ? await CancelAsync(db, hub.FindFirstValue("clinic_slug")!, revoked!, clock.GetUtcNow().UtcDateTime)
+                    : Outcome("A Bundle that withdraws orders carries only the revoked ServiceRequests.");
             var patient = entries.FirstOrDefault(r => (string?)r?["resourceType"] == "Patient");
             var practitioner = entries.FirstOrDefault(r => (string?)r?["resourceType"] == "Practitioner");
             var orders = entries.Where(r => (string?)r?["resourceType"] == "ServiceRequest").ToList();
@@ -152,11 +158,43 @@ public static class OrderEndpoints
         }).RequireAuthorization(Permissions.ReportsCreate);
     }
 
+    /// <summary>Withdrawn exams: cancelled if still waiting, refused (409) once the report is started. All or nothing.</summary>
+    private static async Task<IResult> CancelAsync(ClinicReportDbContext db, string slug, List<JsonNode> revoked, DateTime now)
+    {
+        var system = $"urn:clinichub:{slug}:service-request";
+        var orders = new List<(ReportOrder Order, string? Reason)>();
+        foreach (var sr in revoked)
+        {
+            var id = (string?)sr["identifier"]?.AsArray().FirstOrDefault(i => (string?)i?["system"] == system)?["value"];
+            var order = id is null ? null : await db.ReportOrders.Include(o => o.Template).SingleOrDefaultAsync(o => o.ExternalId == $"{slug}:{id}");
+            if (order is null)
+                return Outcome($"No order {id ?? "(no identifier)"} from this clinic.", StatusCodes.Status404NotFound, "not-found");
+            if (order.Status == ReportOrderStatus.Started)
+                return Outcome($"The {order.Template.Name} has been started (report {order.ReportId}); speak to the reading physician.",
+                    StatusCodes.Status409Conflict, "business-rule");
+            if (order.Status == ReportOrderStatus.Waiting)
+                orders.Add((order, ((string?)sr["note"]?[0]?["text"])?.Trim() is { Length: > 0 } why ? why[..Math.Min(why.Length, 200)] : null));
+        }
+        foreach (var (order, reason) in orders)
+        {
+            order.Status = ReportOrderStatus.Cancelled;
+            order.CancelledAt = now;
+            order.CancelReason = reason ?? "Cancelled by the ordering clinic";
+        }
+        await db.SaveChangesAsync();
+
+        var response = new JsonArray();
+        foreach (var _ in revoked)
+            response.Add(new JsonObject { ["response"] = new JsonObject { ["status"] = "200 OK" } });
+        return Results.Text(new JsonObject { ["resourceType"] = "Bundle", ["type"] = "transaction-response", ["entry"] = response }.ToJsonString(),
+            "application/fhir+json");
+    }
+
     private static JsonObject Created(string location) => new() { ["status"] = "201 Created", ["location"] = location };
 
-    private static IResult Outcome(string diagnostics) => Results.Text(new JsonObject
+    private static IResult Outcome(string diagnostics, int status = StatusCodes.Status400BadRequest, string code = "invalid") => Results.Text(new JsonObject
     {
         ["resourceType"] = "OperationOutcome",
-        ["issue"] = new JsonArray(new JsonObject { ["severity"] = "error", ["code"] = "invalid", ["diagnostics"] = diagnostics }),
-    }.ToJsonString(), "application/fhir+json", statusCode: StatusCodes.Status400BadRequest);
+        ["issue"] = new JsonArray(new JsonObject { ["severity"] = "error", ["code"] = code, ["diagnostics"] = diagnostics }),
+    }.ToJsonString(), "application/fhir+json", statusCode: status);
 }

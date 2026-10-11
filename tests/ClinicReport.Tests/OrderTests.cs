@@ -90,6 +90,44 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         Assert.Equal(HttpStatusCode.Conflict, (await typist.PostAsync($"/api/orders/{(int)order["id"]!}/start", null)).StatusCode);
     }
 
+    private static string Revoke(string orderId) => new JsonObject
+    {
+        ["resourceType"] = "Bundle", ["type"] = "transaction",
+        ["entry"] = new JsonArray(new JsonObject
+        {
+            ["resource"] = new JsonObject
+            {
+                ["resourceType"] = "ServiceRequest", ["status"] = "revoked", ["intent"] = "order",
+                ["identifier"] = new JsonArray(new JsonObject { ["system"] = "urn:clinichub:harbourview:service-request", ["value"] = orderId }),
+                ["note"] = new JsonArray(new JsonObject { ["text"] = "Patient declined" }),
+            },
+            ["request"] = new JsonObject { ["method"] = "PUT", ["url"] = $"ServiceRequest?identifier=urn:clinichub:harbourview:service-request|{orderId}" },
+        }),
+    }.ToJsonString();
+
+    [Fact]
+    public async Task A_withdrawn_exam_leaves_the_worklist_unless_its_report_is_started()
+    {
+        KeepSignedIn();
+        var token = ConnectedFactory.ServiceToken("harbourview");
+        await Json(await Send(Bundle("520", "HV000520"), token));
+        await Json(await Send(Bundle("521", "HV000521"), token));
+        var typist = await factory.SignInAsync("20", "typist", "harbourview", Physician);
+
+        await Json(await Send(Revoke("520"), token));
+        await Json(await Send(Revoke("520"), token));   // sent again: the same answer
+        var worklist = (await Json(await typist.GetAsync("/api/orders"))).AsArray();
+        Assert.DoesNotContain(worklist, o => (string)o!["mrn"]! == "HV000520");
+
+        var started = worklist.Single(o => (string)o!["mrn"]! == "HV000521")!;
+        await Json(await typist.PostAsync($"/api/orders/{(int)started["id"]!}/start", null));
+        var refused = await Send(Revoke("521"), token);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("has been started", await refused.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(Revoke("599"), token)).StatusCode);
+    }
+
     [Fact]
     public async Task Orders_land_in_the_clinic_the_token_names()
     {
