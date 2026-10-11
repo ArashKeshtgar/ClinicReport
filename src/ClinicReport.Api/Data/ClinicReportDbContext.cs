@@ -14,9 +14,25 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
+    public DbSet<ReportOrder> ReportOrders => Set<ReportOrder>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<ReportOrder>(e =>
+        {
+            e.Property(o => o.ExternalId).HasMaxLength(80);
+            e.HasIndex(o => o.ExternalId).IsUnique();
+            e.Property(o => o.Requisition).HasMaxLength(80);
+            e.Property(o => o.Indication).HasMaxLength(500);
+            e.Property(o => o.ReferringPhysician).HasMaxLength(200);
+            e.Property(o => o.Priority).HasMaxLength(10);
+            e.Property(o => o.Status).HasMaxLength(20);
+            e.HasIndex(o => new { o.Status, o.ReceivedAt });
+            e.HasOne(o => o.Patient).WithMany().HasForeignKey(o => o.PatientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(o => o.Template).WithMany().HasForeignKey(o => o.TemplateId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(o => o.Report).WithMany().HasForeignKey(o => o.ReportId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         b.Entity<AppUser>(e =>
         {
             e.Property(u => u.UserName).HasMaxLength(64).UseCollation("NOCASE");

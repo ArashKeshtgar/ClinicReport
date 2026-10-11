@@ -83,6 +83,7 @@ app.MapUserEndpoints();
 app.MapPatientEndpoints();
 app.MapTemplateEndpoints();
 app.MapReportEndpoints();
+app.MapOrderEndpoints();
 app.MapHub<ReportHub>("/hubs/report");
 
 // The React app is served from wwwroot in production; client-side routes fall back to index.html.

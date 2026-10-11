@@ -127,6 +127,11 @@ three ways, and only when a `ClinicHub` section is configured:
   ClinicHub; a role taken away, "sign out everywhere" or a closed account ends it here. If ClinicHub can't be
   reached, sessions continue for `ClinicHub:OfflineGraceMinutes`.
 
+**Orders.** ClinicHub sends exams ordered at a visit to `/fhir` as a FHIR R4 transaction Bundle (Patient, Practitioner,
+ServiceRequest coded with a template key), authenticated with a token ClinicHub signs for ClinicReport. They wait on the
+worklist under *Ordered from ClinicHub*; *Start report* opens a draft with the indication and referring physician filled
+in. A resent order is recognised; an unknown exam is refused with an OperationOutcome.
+
 What stays here: the services a person may work on (e.g. echo only), turning someone's ClinicReport access off,
 and the report-access audit log, kept in each clinic's own database. Passwords, two-factor and roles are ClinicHub's;
 a person appears in ClinicReport's user list after their first sign-in.

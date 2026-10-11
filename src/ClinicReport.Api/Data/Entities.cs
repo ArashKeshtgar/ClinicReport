@@ -229,3 +229,38 @@ public class ReportChange
     public int UserId { get; set; }
     public DateTime At { get; set; }
 }
+
+public static class ReportOrderStatus
+{
+    public const string Waiting = "Waiting";
+    public const string Started = "Started";
+    public const string Cancelled = "Cancelled";
+}
+
+/// <summary>
+/// An order received from ClinicHub (a FHIR ServiceRequest): an exam waiting to be done. Starting it opens a draft
+/// report with the indication and referring physician already filled in.
+/// </summary>
+public class ReportOrder
+{
+    public int Id { get; set; }
+
+    /// <summary>"{clinic}:{ClinicHub's ServiceRequest id}": a resent order is recognised, not duplicated.</summary>
+    public string ExternalId { get; set; } = "";
+
+    /// <summary>The ClinicHub requisition the order came in (several exams can share one).</summary>
+    public string? Requisition { get; set; }
+
+    public int PatientId { get; set; }
+    public Patient Patient { get; set; } = null!;
+    public int TemplateId { get; set; }
+    public ReportTemplate Template { get; set; } = null!;
+    public string? Indication { get; set; }
+    public string? ReferringPhysician { get; set; }
+    public string Priority { get; set; } = "Routine";
+    public string Status { get; set; } = ReportOrderStatus.Waiting;
+    public DateTime ReceivedAt { get; set; }
+    public DateTime? OrderedAt { get; set; }
+    public int? ReportId { get; set; }
+    public Report? Report { get; set; }
+}

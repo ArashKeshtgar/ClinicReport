@@ -128,7 +128,15 @@ const qs = (params: Record<string, string | undefined>) => {
   return s ? `?${s}` : ''
 }
 
+/** An exam ordered in ClinicHub, waiting to be done (connected mode). */
+export type OrderRow = {
+  id: number; patient: string; mrn: string; template: string; service: string; indication: string | null
+  referringPhysician: string | null; priority: 'Routine' | 'Stat'; receivedAt: string; status: 'Waiting' | 'Started' | 'Cancelled'; reportId: number | null
+}
+
 export const api = {
+  orders: () => request<OrderRow[]>('GET', '/api/orders'),
+  startOrder: (id: number) => request<{ reportId: number }>('POST', `/api/orders/${id}/start`),
   settings: () => get<Settings>('/api/settings'),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),

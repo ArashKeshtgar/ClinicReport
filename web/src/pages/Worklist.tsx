@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { api, can, formatDateTime, type WorklistRow } from '../api'
+import { api, can, formatDateTime, type OrderRow, type WorklistRow } from '../api'
 import { useSession } from '../App'
 
 export default function Worklist() {
@@ -9,7 +9,7 @@ export default function Worklist() {
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
-  const { me } = useSession()
+  const { me, settings } = useSession()
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -38,6 +38,8 @@ export default function Worklist() {
         </div>
         <input type="search" placeholder="Search last name, first name or MRN" value={q} onChange={e => setQ(e.target.value)} aria-label="Search" />
       </div>
+
+      {settings.signIn === 'clinichub' && <Ordered />}
 
       {error && <p className="error">{error}</p>}
       {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? (
@@ -69,5 +71,53 @@ export default function Worklist() {
         </div>
       )}
     </>
+  )
+}
+
+/** Exams ordered in ClinicHub and not started yet: starting one opens a draft with the order's indication and physician. */
+function Ordered() {
+  const { me } = useSession()
+  const navigate = useNavigate()
+  const [orders, setOrders] = useState<OrderRow[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const load = () => api.orders().then(setOrders).catch(e => setError(e.message))
+    load()
+    const t = setInterval(load, 30_000)
+    return () => clearInterval(t)
+  }, [])
+
+  const waiting = orders?.filter(o => o.status === 'Waiting') ?? []
+  if (!orders || waiting.length === 0) return null
+  return (
+    <section className="card pad stack" style={{ marginBottom: '1rem' }}>
+      <div className="section-head">
+        <h2>Ordered from ClinicHub <span className="muted small">({waiting.length} waiting)</span></h2>
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="table-wrap">
+        <table className="grid">
+          <thead><tr><th>Received</th><th>Patient</th><th>MRN</th><th>Study</th><th>Indication</th><th>Ordered by</th><th></th></tr></thead>
+          <tbody>
+            {waiting.map(o => (
+              <tr key={o.id}>
+                <td className="muted nowrap">{formatDateTime(o.receivedAt)}{o.priority === 'Stat' && <span className="badge warn" style={{ marginLeft: '.4rem' }}>STAT</span>}</td>
+                <td>{o.patient}</td>
+                <td className="mono">{o.mrn}</td>
+                <td>{o.template}</td>
+                <td className="small">{o.indication ?? <span className="muted">—</span>}</td>
+                <td className="small">{o.referringPhysician}</td>
+                <td>{can(me, 'reports.create') && (
+                  <button className="primary" onClick={async () => {
+                    try { navigate(`/reports/${(await api.startOrder(o.id)).reportId}`) } catch (e) { setError(e instanceof Error ? e.message : 'Not started.') }
+                  }}>Start report</button>
+                )}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }

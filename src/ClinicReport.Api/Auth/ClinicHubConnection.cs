@@ -87,6 +87,10 @@ public static class ClinicHubConnection
 {
     public const string Scheme = "ClinicHub";
 
+    /// <summary>ClinicHub calling ClinicReport itself (orders): a bearer token signed by ClinicHub, for this audience.</summary>
+    public const string ServiceScheme = "ClinicHubService";
+    public const string OrdersPolicy = "clinichub.orders";
+
     public static bool IsConnected(this IServiceProvider services) =>
         services.GetRequiredService<IOptions<ClinicHubOptions>>().Value.Enabled;
 
@@ -102,10 +106,23 @@ public static class ClinicHubConnection
         // The database of the request is the signed-in person's clinic.
         services.AddScoped(sp =>
         {
-            var slug = sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User.FindFirstValue(ClinicHubClaims.Clinic)
+            var user = sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User;
+            // A person's session says "clinic"; ClinicHub's own service token says "clinic_slug".
+            var slug = user?.FindFirstValue(ClinicHubClaims.Clinic) ?? user?.FindFirstValue("clinic_slug")
                 ?? throw new InvalidOperationException("Not signed in to a clinic.");
             return sp.GetRequiredService<ClinicReportDatabases>().Open(slug);
         });
+
+        auth.AddJwtBearer(ServiceScheme, o =>
+        {
+            o.Authority = hub.Authority;
+            o.Audience = hub.ClientId;
+            o.RequireHttpsMetadata = hub.RequireHttpsMetadata;
+            o.MapInboundClaims = false;
+        });
+        services.AddAuthorizationBuilder().AddPolicy(OrdersPolicy, p => p
+            .AddAuthenticationSchemes(ServiceScheme).RequireAuthenticatedUser()
+            .RequireClaim("scope", "orders").RequireAssertion(ctx => ClinicReportDatabases.IsValidSlug(ctx.User.FindFirstValue("clinic_slug"))));
 
         auth.AddOpenIdConnect(Scheme, "ClinicHub", o =>
         {
@@ -130,6 +147,13 @@ public static class ClinicHubConnection
             o.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             o.NonceCookie.SameSite = SameSiteMode.Lax;
             o.NonceCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            // Keep only what is used later: the refresh token (re-checks) and the id token (sign-out hint). The access token
+            // is not used here and would only make the cookie bigger (on localhost every app's cookies travel together).
+            o.Events.OnTicketReceived = ctx =>
+            {
+                ctx.Properties!.StoreTokens(ctx.Properties.GetTokens().Where(t => t.Name is "refresh_token" or "id_token").ToList());
+                return Task.CompletedTask;
+            };
             o.Events.OnTokenValidated = async ctx =>
             {
                 ctx.Principal = await ToLocalPrincipal(ctx.HttpContext.RequestServices, ctx.Principal!);
@@ -280,7 +304,6 @@ public static class ClinicHubConnection
             // Straight from ClinicHub's token endpoint over the authenticated back channel (OpenID Connect Core 3.1.3.7).
             var idToken = json.RootElement.GetProperty("id_token").GetString()!;
             ctx.Properties.UpdateTokenValue("id_token", idToken);
-            ctx.Properties.UpdateTokenValue("access_token", json.RootElement.GetProperty("access_token").GetString()!);
             if (json.RootElement.TryGetProperty("refresh_token", out var rt))
                 ctx.Properties.UpdateTokenValue("refresh_token", rt.GetString()!);
             return new RefreshResult.Ok(new JwtSecurityTokenHandler().ReadJwtToken(idToken));

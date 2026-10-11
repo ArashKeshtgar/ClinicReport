@@ -54,6 +54,14 @@ public class ConnectedFactory : WebApplicationFactory<Program>
                 o.Backchannel = new HttpClient(new Stub(this));
             });
             services.AddSingleton<IStartupFilter>(new HubSignInRoute());
+            // ClinicHub's service tokens: signed here with a test key instead of ClinicHub's published one.
+            services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(ClinicHubConnection.ServiceScheme, o =>
+            {
+                var config = new OpenIdConnectConfiguration { Issuer = "https://hub.test/" };
+                config.SigningKeys.Add(ServiceKey);
+                o.Configuration = config;
+                o.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(config);
+            });
         });
     }
 
@@ -93,6 +101,17 @@ public class ConnectedFactory : WebApplicationFactory<Program>
             next(app);
         };
     }
+
+    public static readonly Microsoft.IdentityModel.Tokens.RsaSecurityKey ServiceKey = new(System.Security.Cryptography.RSA.Create(2048)) { KeyId = "test" };
+
+    /// <summary>A token like the one ClinicHub sends with an order.</summary>
+    public static string ServiceToken(string clinic, string audience = "clinicreport", string scope = "orders") =>
+        new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+        {
+            Issuer = "https://hub.test/", Audience = audience, Expires = DateTime.UtcNow.AddMinutes(5),
+            SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(ServiceKey, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.RsaSha256),
+            Claims = new Dictionary<string, object> { ["sub"] = "clinichub", ["scope"] = scope, ["clinic_slug"] = clinic, ["clinic_name"] = clinic },
+        });
 
     public static string IdToken(params (string Type, string Value)[] claims)
     {
