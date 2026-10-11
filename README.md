@@ -132,6 +132,11 @@ ServiceRequest coded with a template key), authenticated with a token ClinicHub 
 worklist under *Ordered from ClinicHub*; *Start report* opens a draft with the indication and referring physician filled
 in. A resent order is recognised; an unknown exam is refused with an OperationOutcome.
 
+**Results back.** Signing a report from an order sends it to ClinicHub as a FHIR DiagnosticReport (`final`, the
+conclusion, and a link to the full report at `ClinicHub:PublicUrl`); an addendum sends it again as `amended`. Messages
+wait in the clinic database's outbox until ClinicHub accepts them; ClinicReport authenticates with its own client id
+and secret (client credentials, scope `results`).
+
 What stays here: the services a person may work on (e.g. echo only), turning someone's ClinicReport access off,
 and the report-access audit log, kept in each clinic's own database. Passwords, two-factor and roles are ClinicHub's;
 a person appears in ClinicReport's user list after their first sign-in.
@@ -168,7 +173,7 @@ The full format (field types, conditions, formulas, normal ranges, presets) is i
 
 ## Roadmap
 
-- HL7 v2 ORU / FHIR `DiagnosticReport` export, and patient/order intake from a HIS (ADT/ORM)
+- HL7 v2 ORU export, and patient/order intake from a HIS (ADT/ORM)
 - Server-side PDF and secure report delivery to referring physicians
 - Measurement import from echo machines (DICOM SR)
 - More templates: stress test, Holter, carotid and venous duplex, abdominal ultrasound
