@@ -41,6 +41,9 @@ public class ClinicHubOptions
     /// <summary>How often waiting results are sent to ClinicHub. 0 turns the worker off (tests send on demand).</summary>
     public int SendSeconds { get; set; } = 5;
 
+    /// <summary>FinancePowerApp's address (the group's accounting). Empty: nothing is sent there.</summary>
+    public string? FinanceUrl { get; set; }
+
     public bool Enabled => !string.IsNullOrWhiteSpace(Authority);
 }
 
@@ -113,6 +116,10 @@ public static class ClinicHubConnection
         services.AddHttpClient(Reports.ResultSender.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddSingleton<Reports.ResultSender>();
         services.AddHostedService<Reports.ResultSenderWorker>();
+        // Signed reports of ordered exams to the group's accounting, when FinancePowerApp's address is set.
+        services.AddHttpClient(Reports.FinanceSender.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<Reports.FinanceSender>();
+        services.AddHostedService<Reports.FinanceSenderWorker>();
         // The database of the request is the signed-in person's clinic.
         services.AddScoped(sp =>
         {

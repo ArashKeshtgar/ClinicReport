@@ -95,6 +95,20 @@ namespace ClinicReport.Api.Data.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("ClinicReport.Api.Data.FinanceExport", b =>
+                {
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ExternalId");
+
+                    b.ToTable("FinanceExports");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.Patient", b =>
                 {
                     b.Property<int>("Id")
@@ -364,6 +378,12 @@ namespace ClinicReport.Api.Data.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("OhipProfessionalFee")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("OhipTechnicalFee")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Service")

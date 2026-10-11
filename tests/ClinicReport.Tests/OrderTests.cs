@@ -222,4 +222,38 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         await factory.Services.GetRequiredService<ClinicReport.Api.Reports.ResultSender>().SendAsync();
         Assert.Equal(before, factory.Hub.Results.Count);
     }
+
+    [Fact]
+    public async Task A_signed_ordered_exam_becomes_a_receivable_from_ohip_once_the_template_has_fees()
+    {
+        KeepSignedIn();
+        await Json(await Send(Bundle("950", "HV000950", family: "Feeless"), ConnectedFactory.ServiceToken("harbourview")));
+        var physician = await factory.SignInAsync("24", "dr.fees", "harbourview", [.. Physician, "templates.design"]);
+        var order = (await Json(await physician.GetAsync("/api/orders"))).AsArray().Single(o => (string)o!["mrn"]! == "HV000950")!;
+        var id = (int)(await Json(await physician.PostAsync($"/api/orders/{(int)order["id"]!}/start", null)))["reportId"]!;
+        foreach (var section in new[] { "study", "lv", "rv", "mitral", "aortic", "tricuspid", "pericardium" })
+            (await physician.PostAsync($"/api/reports/{id}/presets/{section}", null)).EnsureSuccessStatusCode();
+        (await physician.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "Normal study." })).EnsureSuccessStatusCode();
+        await Json(await physician.PostAsync($"/api/reports/{id}/sign", null));
+
+        // Setting fees needs the designer permission, and every request re-checks the session with ClinicHub.
+        factory.TokenEndpoint = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { id_token = ConnectedFactory.IdToken([.. Physician.Append("templates.design").Select(p => ("permission", p))]), access_token = "at", refresh_token = "rt" }),
+        };
+        await using var db = factory.Services.GetRequiredService<ClinicReport.Api.Auth.ClinicReportDatabases>().Create("harbourview");
+        // No fees on the template: nothing for the accounting.
+        Assert.DoesNotContain(await ClinicReport.Api.Reports.FinanceSender.BuildAsync(db, "harbourview"), d => (string)d["externalId"]! == $"report:{id}:signed");
+
+        var template = (await Json(await physician.GetAsync("/api/templates"))).AsArray().Single(t => (string)t!["key"]! == "echo-tte")!;
+        Assert.Equal(HttpStatusCode.BadRequest, (await physician.PutAsJsonAsync($"/api/templates/{(int)template["id"]!}/fees", new { ohipTechnicalFee = -1m })).StatusCode);
+        (await physician.PutAsJsonAsync($"/api/templates/{(int)template["id"]!}/fees", new { ohipTechnicalFee = 60.00m, ohipProfessionalFee = 40.00m })).EnsureSuccessStatusCode();
+
+        var doc = (await ClinicReport.Api.Reports.FinanceSender.BuildAsync(db, "harbourview")).Single(d => (string)d["externalId"]! == $"report:{id}:signed");
+        Assert.Equal(("Invoice", "OHIP"), ((string)doc["kind"]!, (string)doc["party"]!["type"]!));
+        var lines = doc["lines"]!.AsArray();
+        Assert.Equal(60.00m, (decimal)lines.Single(l => (string)l!["category"]! == "OHIP.Technical")!["amount"]!);
+        Assert.Equal(40.00m, (decimal)lines.Single(l => (string)l!["category"]! == "Diagnostics.Echo")!["amount"]!);
+        Assert.DoesNotContain("Feeless", doc.ToJsonString());
+    }
 }

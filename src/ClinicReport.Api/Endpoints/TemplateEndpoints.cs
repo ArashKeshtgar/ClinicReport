@@ -16,7 +16,7 @@ public static class TemplateEndpoints
 {
     public record TemplateSummary(
         int Id, string Key, string Name, string Service, bool IsActive,
-        int? PublishedVersionId, int? PublishedVersion, int? DraftVersionId);
+        int? PublishedVersionId, int? PublishedVersion, int? DraftVersionId, decimal? OhipTechnicalFee = null, decimal? OhipProfessionalFee = null);
 
     public record VersionInfo(int Id, int Version, string Status, DateTime CreatedAt, DateTime? PublishedAt);
 
@@ -29,6 +29,7 @@ public static class TemplateEndpoints
     public record PreviewRequest(string DefinitionJson, Dictionary<string, JsonElement>? Values, string? Sex, double? HeightCm, double? WeightKg, double? AgeYears);
     public record PreviewResult(IReadOnlyList<string> Errors, RenderedReport? Rendered);
     public record ActiveBody(bool IsActive);
+    public record FeesBody(decimal? OhipTechnicalFee, decimal? OhipProfessionalFee);
 
     public static void MapTemplateEndpoints(this IEndpointRouteBuilder app)
     {
@@ -139,6 +140,20 @@ public static class TemplateEndpoints
             return Results.NoContent();
         });
 
+        // What OHIP pays for this exam (technical and professional parts): the clinic sets it; the accounting uses it.
+        admin.MapPut("/{id:int}/fees", async (int id, FeesBody body, ClinicReportDbContext db) =>
+        {
+            var t = await db.Templates.FindAsync(id);
+            if (t is null)
+                return Results.NotFound();
+            static bool Bad(decimal? v) => v is < 0 or > 10000 || (v is { } x && decimal.Round(x, 2) != x);
+            if (Bad(body.OhipTechnicalFee) || Bad(body.OhipProfessionalFee))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["fees"] = ["Dollars and cents, from 0 to 10,000; empty for none."] });
+            (t.OhipTechnicalFee, t.OhipProfessionalFee) = (body.OhipTechnicalFee, body.OhipProfessionalFee);
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        });
+
         // Live preview for the designer: validates and renders sample answers without saving anything.
         admin.MapPost("/preview", (PreviewRequest req) =>
         {
@@ -173,7 +188,7 @@ public static class TemplateEndpoints
     {
         var published = t.Versions.Where(v => v.Status == TemplateStatus.Published).MaxBy(v => v.Version);
         var draft = t.Versions.FirstOrDefault(v => v.Status == TemplateStatus.Draft);
-        return new TemplateSummary(t.Id, t.Key, t.Name, t.Service, t.IsActive, published?.Id, published?.Version, draft?.Id);
+        return new TemplateSummary(t.Id, t.Key, t.Name, t.Service, t.IsActive, published?.Id, published?.Version, draft?.Id, t.OhipTechnicalFee, t.OhipProfessionalFee);
     }
 
     private static async Task<TemplateDetail?> LoadDetail(ClinicReportDbContext db, int id)

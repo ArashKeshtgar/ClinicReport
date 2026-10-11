@@ -16,6 +16,7 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
     public DbSet<ReportOrder> ReportOrders => Set<ReportOrder>();
     public DbSet<ResultMessage> ResultMessages => Set<ResultMessage>();
+    public DbSet<FinanceExport> FinanceExports => Set<FinanceExport>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -90,6 +91,11 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
             e.Property(p => p.Sex).HasMaxLength(1);
         });
 
+        b.Entity<FinanceExport>(e =>
+        {
+            e.HasKey(x => x.ExternalId);
+            e.Property(x => x.ExternalId).HasMaxLength(200);
+        });
         b.Entity<ReportTemplate>(e =>
         {
             e.Property(t => t.Key).HasMaxLength(64);

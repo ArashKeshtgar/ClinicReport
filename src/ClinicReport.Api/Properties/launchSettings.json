@@ -21,7 +21,8 @@
         "ClinicHub__ClientSecret": "dev-only-clinicreport-secret",
         "ClinicHub__RequireHttpsMetadata": "false",
         "ClinicHub__DatabasePattern": "Data Source=clinicreport-{clinic}.db",
-        "ClinicHub__PublicUrl": "http://localhost:5291/"
+        "ClinicHub__PublicUrl": "http://localhost:5291/",
+        "ClinicHub__FinanceUrl": "http://localhost:5400"
       }
     }
   }

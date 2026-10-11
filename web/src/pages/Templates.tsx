@@ -109,6 +109,22 @@ export default function Templates() {
                       {t.isActive ? 'Deactivate' : 'Activate'}
                     </button>
                   )}
+                  {isAdmin && (
+                    <button className="small-btn" title="What OHIP pays for this exam (technical and professional parts), for the clinic's accounting"
+                      onClick={() => {
+                        const fee = (label: string, v: number | null) => {
+                          const answer = window.prompt(`${t.name}: OHIP ${label} fee in dollars (empty for none)`, v?.toFixed(2) ?? '')
+                          return answer === null ? undefined : answer.trim() === '' ? null : Number(answer)
+                        }
+                        const tech = fee('technical', t.ohipTechnicalFee)
+                        if (tech === undefined) return
+                        const prof = fee('professional', t.ohipProfessionalFee)
+                        if (prof === undefined) return
+                        api.setTemplateFees(t.id, tech, prof).then(load).catch(e => window.alert(e.message))
+                      }}>
+                      OHIP fees{t.ohipTechnicalFee != null || t.ohipProfessionalFee != null ? `: $${((t.ohipTechnicalFee ?? 0) + (t.ohipProfessionalFee ?? 0)).toFixed(2)}` : ''}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

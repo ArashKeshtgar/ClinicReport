@@ -150,6 +150,11 @@ public class ReportTemplate
     public string Name { get; set; } = "";
     public string Service { get; set; } = "";
     public bool IsActive { get; set; } = true;
+
+    /// <summary>What OHIP pays for the exam's technical and professional parts, set by the clinic. Connected to the group's
+    /// accounting, a signed report of an ordered exam becomes a receivable from OHIP for these (Reports/FinanceSender).</summary>
+    public decimal? OhipTechnicalFee { get; set; }
+    public decimal? OhipProfessionalFee { get; set; }
     public List<TemplateVersion> Versions { get; set; } = [];
 }
 
@@ -267,6 +272,13 @@ public class ReportOrder
     /// <summary>Withdrawn by the ordering clinic before the exam was started.</summary>
     public DateTime? CancelledAt { get; set; }
     public string? CancelReason { get; set; }
+}
+
+/// <summary>A financial document FinancePowerApp has accepted, so it is sent once.</summary>
+public class FinanceExport
+{
+    public string ExternalId { get; set; } = "";
+    public DateTime SentAt { get; set; }
 }
 
 /// <summary>A result waiting to be sent to ClinicHub (connected mode): the outbox, saved with the signature or addendum.</summary>

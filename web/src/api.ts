@@ -30,6 +30,8 @@ export type Patient = { id: number; mrn: string; firstName: string; lastName: st
 export type TemplateSummary = {
   id: number; key: string; name: string; service: string; isActive: boolean
   publishedVersionId: number | null; publishedVersion: number | null; draftVersionId: number | null
+  /** What OHIP pays for the exam; used by the group's accounting when connected. */
+  ohipTechnicalFee: number | null; ohipProfessionalFee: number | null
 }
 
 export type TemplateDetail = {
@@ -158,6 +160,8 @@ export const api = {
   discardDraft: (id: number) => request<void>('DELETE', `/api/templates/${id}/draft`),
   publish: (id: number) => request<TemplateDetail>('POST', `/api/templates/${id}/publish`),
   setTemplateActive: (id: number, isActive: boolean) => request<void>('PUT', `/api/templates/${id}/active`, { isActive }),
+  setTemplateFees: (id: number, ohipTechnicalFee: number | null, ohipProfessionalFee: number | null) =>
+    request<void>('PUT', `/api/templates/${id}/fees`, { ohipTechnicalFee, ohipProfessionalFee }),
   preview: (definitionJson: string, values: Values, sex: string, heightCm: number | null, weightKg: number | null, ageYears: number | null) =>
     request<{ errors: string[]; rendered: Rendered | null }>('POST', '/api/templates/preview', { definitionJson, values, sex, heightCm, weightKg, ageYears }),
 
