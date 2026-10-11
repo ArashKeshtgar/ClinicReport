@@ -110,6 +110,37 @@ tests/         xUnit: domain tests and HTTP-level API tests
 docs/          template format
 ```
 
+## Connected to ClinicHub
+
+ClinicReport runs on its own (its own accounts, as above) or as one of the applications of
+[ClinicHub](https://github.com/ArashKeshtgar/ClinicHub), a clinic platform for Ontario. Connected, it changes in
+three ways, and only when a `ClinicHub` section is configured:
+
+- **One sign-in.** People sign in through ClinicHub (OpenID Connect, authorization code with PKCE) with the same
+  password and two-factor as the clinic's other applications, and choose the clinic there. ClinicHub decides who
+  may use ClinicReport: a role holding `clinicreport:reports.sign` arrives here as `reports.sign`, the permission
+  ClinicReport already checks. Signing out here signs out of ClinicHub too.
+- **One database per clinic.** Each clinic chosen in ClinicHub gets its own SQLite file
+  (`ClinicHub:DatabasePattern`, default `clinicreport-{clinic}.db`), created with the bundled templates at its first
+  sign-in. One ClinicReport can serve several clinics without their reports ever sharing a table.
+- **ClinicHub has the last word.** Every few minutes (`ClinicHub:RecheckMinutes`) the session is checked with
+  ClinicHub; a role taken away, "sign out everywhere" or a closed account ends it here. If ClinicHub can't be
+  reached, sessions continue for `ClinicHub:OfflineGraceMinutes`.
+
+What stays here: the services a person may work on (e.g. echo only), turning someone's ClinicReport access off,
+and the report-access audit log, kept in each clinic's own database. Passwords, two-factor and roles are ClinicHub's;
+a person appears in ClinicReport's user list after their first sign-in.
+
+```bash
+dotnet run --project src/ClinicReport.Api --launch-profile connected   # with ClinicHub running on http://localhost:5301
+```
+
+| Setting | Meaning |
+|---|---|
+| `ClinicHub__Authority` | ClinicHub's address (its issuer), e.g. `https://hub.example.ca/`. Empty: standalone. |
+| `ClinicHub__ClientId`, `ClinicHub__ClientSecret` | ClinicReport's registration in ClinicHub (`Sso:Clients` there). |
+| `ClinicHub__DatabasePattern` | `Data Source=/data/clinicreport-{clinic}.db` in the container. |
+
 ## How a template works
 
 ```json

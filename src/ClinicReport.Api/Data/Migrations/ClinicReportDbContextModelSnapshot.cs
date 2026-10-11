@@ -35,6 +35,10 @@ namespace ClinicReport.Api.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("FailedLoginCount")
                         .HasColumnType("INTEGER");
 
@@ -80,6 +84,10 @@ namespace ClinicReport.Api.Data.Migrations
                         .UseCollation("NOCASE");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExternalId")
+                        .IsUnique()
+                        .HasFilter("ExternalId IS NOT NULL");
 
                     b.HasIndex("UserName")
                         .IsUnique();

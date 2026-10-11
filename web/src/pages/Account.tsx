@@ -6,13 +6,30 @@ import { TwoFactorSetup } from '../components/TwoFactorSetup'
 type Msg = { ok: boolean; text: string } | null
 
 export default function Account() {
-  const { me, refreshMe } = useSession()
+  const { me, refreshMe, settings } = useSession()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [msg, setMsg] = useState<Msg>(null)
   const [settingUp, setSettingUp] = useState(false)
   const [twoMsg, setTwoMsg] = useState<Msg>(null)
   const [sessionMsg, setSessionMsg] = useState<Msg>(null)
+
+  // Connected: the account (password, two-factor, sessions) is the person's ClinicHub account.
+  if (settings.signIn === 'clinichub') return (
+    <>
+      <div className="page-head"><h1>My account</h1></div>
+      <section className="card pad stack" style={{ maxWidth: 560 }}>
+        <div><strong>{me.displayName}</strong>{me.credentials && `, ${me.credentials}`}</div>
+        <div className="muted small mono">{me.userName}</div>
+        <div>Clinic: <strong>{me.clinic}</strong></div>
+        <div className="badges">{me.roles.map(r => <span key={r} className="badge">{r}</span>)}</div>
+        <div className="muted small">Services: {me.services ? me.services.join(', ') : 'all'}</div>
+        <p className="muted">You sign in to ClinicReport with your ClinicHub account. Change your password, set up two-factor sign-in,
+          switch clinic or sign out on other devices in ClinicHub.</p>
+        {settings.clinicHubUrl && <div><a className="button primary" href={new URL('account', settings.clinicHubUrl).toString()}>Open my ClinicHub account</a></div>}
+      </section>
+    </>
+  )
 
   const firstError = (err: unknown, fallback: string) =>
     err instanceof ApiError ? Object.values(err.fieldErrors).flat()[0] ?? err.message : fallback

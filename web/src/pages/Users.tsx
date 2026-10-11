@@ -13,6 +13,7 @@ export default function Users() {
   const [catalog, setCatalog] = useState<PermissionInfo[]>([])
   const [services, setServices] = useState<string[]>([])
   const { settings } = useSession()
+  const connected = settings.signIn === 'clinichub'
 
   const load = () => Promise.all([api.users().then(setUsers), api.roles().then(setRoles)])
   useEffect(() => {
@@ -24,12 +25,16 @@ export default function Users() {
   return (
     <>
       <div className="page-head">
-        <h1>Users &amp; roles</h1>
-        <div className="segmented">
-          <button className={tab === 'users' ? 'on' : ''} onClick={() => setTab('users')}>Users ({users.length})</button>
-          <button className={tab === 'roles' ? 'on' : ''} onClick={() => setTab('roles')}>Roles ({roles.length})</button>
-        </div>
+        <h1>{connected ? 'Users' : <>Users &amp; roles</>}</h1>
+        {!connected && (
+          <div className="segmented">
+            <button className={tab === 'users' ? 'on' : ''} onClick={() => setTab('users')}>Users ({users.length})</button>
+            <button className={tab === 'roles' ? 'on' : ''} onClick={() => setTab('roles')}>Roles ({roles.length})</button>
+          </div>
+        )}
       </div>
+      {connected && <p className="notice">People, passwords, two-factor and roles are managed in ClinicHub; a person appears here after their first sign-in.
+        Here you limit someone to some services or turn off their access to ClinicReport.</p>}
       {settings.accountsLocked && <p className="notice">Public demo: you can look around, but accounts, roles and passwords can't be changed here.</p>}
       {tab === 'users'
         ? <UsersTab users={users} roles={roles} services={services} reload={load} />
@@ -41,6 +46,7 @@ export default function Users() {
 // ---------------------------------------------------------------- users --
 
 function UsersTab({ users, roles, services, reload }: { users: User[]; roles: RoleInfo[]; services: string[]; reload: () => Promise<unknown> }) {
+  const connected = useSession().settings.signIn === 'clinichub'
   const [editing, setEditing] = useState<User | 'new' | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -51,7 +57,7 @@ function UsersTab({ users, roles, services, reload }: { users: User[]; roles: Ro
       <div className="stack">
         <div className="toolbar">
           <input type="search" placeholder="Find a user or role" value={q} onChange={e => setQ(e.target.value)} aria-label="Find user" />
-          <button className="primary" onClick={() => { setFlash(null); setEditing('new') }}>Add user</button>
+          {!connected && <button className="primary" onClick={() => { setFlash(null); setEditing('new') }}>Add user</button>}
         </div>
         <div className="table-wrap card">
           <table className="grid">
@@ -101,6 +107,8 @@ function UserEditor({ user, roles, services, flash, onClose, onSaved }: {
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(flash ? { ok: true, text: flash } : null)
   const limited = form.services.length > 0
+  // Signs in through ClinicHub: name and roles come from there; services and access are set here.
+  const managed = !!user?.managedByClinicHub
 
   const effective = useMemo(() => {
     const perms = new Set<Permission>()
@@ -167,11 +175,11 @@ function UserEditor({ user, roles, services, flash, onClose, onSaved }: {
         </div>
       )}
       <div className="form-grid">
-        <label>Full name<input value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} />{err('displayName')}</label>
-        <label>Credentials<input value={form.credentials} onChange={e => setForm({ ...form, credentials: e.target.value })} placeholder="MD, FRCPC" /></label>
+        <label>Full name<input value={form.displayName} disabled={managed} onChange={e => setForm({ ...form, displayName: e.target.value })} />{err('displayName')}</label>
+        <label>Credentials<input value={form.credentials} disabled={managed} onChange={e => setForm({ ...form, credentials: e.target.value })} placeholder="MD, FRCPC" /></label>
       </div>
 
-      <fieldset>
+      {managed ? <p className="muted small">Roles: {user!.roles.length ? user!.roles.join(', ') : 'as granted in ClinicHub'} (managed in ClinicHub).</p> : <fieldset>
         <legend>Roles</legend>
         {roles.map(r => (
           <label key={r.id} className="check">
@@ -181,7 +189,7 @@ function UserEditor({ user, roles, services, flash, onClose, onSaved }: {
         ))}
         {err('roleIds')}
         <div className="muted small">Allows: {effective.length ? effective.join(', ') : 'nothing'}</div>
-      </fieldset>
+      </fieldset>}
 
       <fieldset>
         <legend>Services</legend>
@@ -210,7 +218,7 @@ function UserEditor({ user, roles, services, flash, onClose, onSaved }: {
           <hr />
           <h3>Security</h3>
           <div className="security-actions">
-            <button onClick={resetPassword}>Reset password</button>
+            {!managed && <button onClick={resetPassword}>Reset password</button>}
             {user.isLockedOut && <button onClick={() => action(`Unlock ${user.displayName}?`, () => api.unlockUser(user.id), 'Unlocked.')}>Unlock</button>}
             {user.twoFactorEnabled && <button onClick={() => action(`Reset two-factor for ${user.displayName}? Use this when they lost their phone.`, () => api.resetTwoFactor(user.id), 'Two-factor reset; their sessions ended.')}>Reset two-factor</button>}
             <button onClick={() => action(`Sign ${user.displayName} out on every device?`, () => api.revokeSessions(user.id), 'All their sessions ended.')}>Sign out everywhere</button>

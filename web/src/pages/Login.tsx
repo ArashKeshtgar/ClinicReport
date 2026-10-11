@@ -82,3 +82,22 @@ export default function Login({ settings, onSignedIn }: { settings: Settings; on
     </div>
   )
 }
+
+/** Connected installations: one sign-in for every application of the clinic, at ClinicHub. */
+export function ClinicHubSignIn({ settings }: { settings: Settings }) {
+  const params = new URLSearchParams(window.location.search)
+  const error = params.get('signInError')
+  const returnUrl = window.location.pathname + (params.has('signInError') ? '' : window.location.search)
+  return (
+    <div className="login">
+      <div className="login-card card">
+        <div className="login-brand"><Logo size={40} /><h1>{settings.name}</h1></div>
+        <p className="muted">Structured clinical reporting</p>
+        <p>This installation signs you in with your clinic's ClinicHub account: the same password and two-factor as the
+          rest of the clinic's applications. You choose the clinic there.</p>
+        {error && <p className="error" role="alert">{error}</p>}
+        <a className="button primary" href={`/api/auth/sso/start?returnUrl=${encodeURIComponent(returnUrl)}`}>Sign in with ClinicHub</a>
+      </div>
+    </div>
+  )
+}

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router'
 import { api, can, type Me, type Settings } from './api'
-import Login from './pages/Login'
+import Login, { ClinicHubSignIn } from './pages/Login'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -45,12 +45,17 @@ export default function App() {
   }, [settings])
 
   const signOut = useCallback(async () => {
+    // Connected: one sign-out, here and at ClinicHub.
+    if (settings?.signIn === 'clinichub') {
+      window.location.assign('/api/auth/sso/signout')
+      return
+    }
     await api.logout()
     setMe(null)
-  }, [])
+  }, [settings])
 
   if (!settings || me === undefined) return <div className="center muted">Loading…</div>
-  if (!me) return <Login settings={settings} onSignedIn={setMe} />
+  if (!me) return settings.signIn === 'clinichub' ? <ClinicHubSignIn settings={settings} /> : <Login settings={settings} onSignedIn={setMe} />
   if (me.pendingAction) return <PendingActionPage me={me} settings={settings} onDone={setMe} onSignOut={signOut} />
 
   const printing = location.pathname.endsWith('/print')
@@ -87,12 +92,13 @@ function TopBar() {
       <div className="brand">
         <Logo />
         <span>{settings.name}</span>
+        {me.clinic && <span className="badge" title="Signed in through ClinicHub">{me.clinic}</span>}
         {settings.demo && <span className="badge warn" title="Synthetic data only">Demo</span>}
       </div>
       <nav>
         <NavLink to="/" end>Worklist</NavLink>
         <NavLink to="/templates">Templates</NavLink>
-        {can(me, 'users.manage') && <NavLink to="/users">Users &amp; roles</NavLink>}
+        {can(me, 'users.manage') && <NavLink to="/users">{settings.signIn === 'clinichub' ? 'Users' : <>Users &amp; roles</>}</NavLink>}
         {can(me, 'audit.view') && <NavLink to="/audit">Audit log</NavLink>}
       </nav>
       <div className="who">

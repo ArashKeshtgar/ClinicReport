@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -22,7 +23,7 @@ public static class AuthEndpoints
     public record DemoLoginRequest(string UserName);
     public record MeDto(
         int Id, string UserName, string DisplayName, string? Credentials, string[] Roles, string[] Permissions,
-        string[]? Services, bool TwoFactorEnabled, bool TwoFactorRequired, string? PendingAction);
+        string[]? Services, bool TwoFactorEnabled, bool TwoFactorRequired, string? PendingAction, string? Clinic = null);
     public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
     public record TwoFactorSetup(string Secret, string OtpAuthUri);
     public record CodeBody(string Code);
@@ -31,83 +32,113 @@ public static class AuthEndpoints
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/auth").WithTags("Auth");
-
-        api.MapPost("/login", async (LoginRequest req, ClinicReportDbContext db, IPasswordHasher<AppUser> hasher,
-            IDataProtectionProvider protection, SecurityLog log, TimeProvider clock, HttpContext http) =>
+        var connected = app.ServiceProvider.IsConnected();
+        if (connected)
         {
-            var now = clock.GetUtcNow();
-            var userName = (req.UserName ?? "").Trim();
-            var user = await db.Users.Include(u => u.Roles).ThenInclude(ur => ur.Role)
-                .SingleOrDefaultAsync(u => u.UserName == userName && u.IsActive);
+            // Connected to ClinicHub: these exist only to say so (their handlers would need a clinic's database to bind).
+            var managed = () => Results.Problem("Sign-in, passwords, two-factor and roles are managed in ClinicHub for this installation.",
+                statusCode: StatusCodes.Status409Conflict);
+            foreach (var path in new[] { "/login", "/demo-login", "/password", "/two-factor/setup", "/two-factor/enable", "/two-factor/disable" })
+                api.MapPost(path, managed).AllowAnonymous();
+        }
 
-            if (user?.LockoutEndUtc is { } until && until > now.UtcDateTime)
+        if (!connected)
+        {
+            api.MapPost("/login", async (LoginRequest req, ClinicReportDbContext db, IPasswordHasher<AppUser> hasher,
+                IDataProtectionProvider protection, SecurityLog log, TimeProvider clock, HttpContext http) =>
             {
-                await log.WriteAsync(SecurityEventTypes.LoginFailed, null, user.Id, "Account locked");
-                return Results.Problem($"Too many failed attempts. Try again after {Math.Ceiling((until - now.UtcDateTime).TotalMinutes)} minutes, or ask an administrator to unlock the account.",
-                    statusCode: StatusCodes.Status423Locked);
-            }
+                var now = clock.GetUtcNow();
+                var userName = (req.UserName ?? "").Trim();
+                var user = await db.Users.Include(u => u.Roles).ThenInclude(ur => ur.Role)
+                    .SingleOrDefaultAsync(u => u.UserName == userName && u.IsActive);
 
-            // Hash even when the user does not exist so timing does not reveal valid user names.
-            var result = hasher.VerifyHashedPassword(user ?? new AppUser(), user?.PasswordHash ?? DummyHash, req.Password ?? "");
-            if (user is null || result == PasswordVerificationResult.Failed)
-                return await Failed(user, "Wrong password", "Wrong user name or password.");
-
-            if (result == PasswordVerificationResult.SuccessRehashNeeded)
-                user.PasswordHash = hasher.HashPassword(user, req.Password!);
-
-            if (user.TwoFactorEnabled)
-            {
-                if (string.IsNullOrWhiteSpace(req.Code))
-                    return Results.Problem("Enter the 6-digit code from your authenticator app.", statusCode: StatusCodes.Status401Unauthorized,
-                        extensions: new Dictionary<string, object?> { ["twoFactorRequired"] = true });
-                var secret = protection.CreateProtector(TwoFactorPurpose).Unprotect(user.TwoFactorSecret!);
-                if (Totp.Verify(secret, req.Code, now, user.TwoFactorLastStep) is not { } step)
-                    return await Failed(user, "Wrong two-factor code", "That code is wrong or already used.", twoFactor: true);
-                user.TwoFactorLastStep = step;
-            }
-
-            user.FailedLoginCount = 0;
-            user.LockoutEndUtc = null;
-            user.LastLoginAt = now.UtcDateTime;
-            log.Add(SecurityEventTypes.LoginSucceeded, user.Id);
-            await db.SaveChangesAsync();
-            await AuthSetup.SignInAsync(http, user);
-            return Results.Ok(ToMe(user));
-
-            async Task<IResult> Failed(AppUser? u, string detail, string message, bool twoFactor = false)
-            {
-                if (u is not null)
+                if (user?.LockoutEndUtc is { } until && until > now.UtcDateTime)
                 {
-                    u.FailedLoginCount++;
-                    if (u.FailedLoginCount >= MaxFailedLogins)
-                    {
-                        u.FailedLoginCount = 0;
-                        u.LockoutEndUtc = now.UtcDateTime + LockoutDuration;
-                        log.Add(SecurityEventTypes.LockedOut, u.Id);
-                    }
+                    await log.WriteAsync(SecurityEventTypes.LoginFailed, null, user.Id, "Account locked");
+                    return Results.Problem($"Too many failed attempts. Try again after {Math.Ceiling((until - now.UtcDateTime).TotalMinutes)} minutes, or ask an administrator to unlock the account.",
+                        statusCode: StatusCodes.Status423Locked);
                 }
-                log.Add(SecurityEventTypes.LoginFailed, u?.Id, detail: u is null ? $"Unknown user name \"{Short(userName)}\"" : detail);
-                await db.SaveChangesAsync();
-                return Results.Problem(message, statusCode: StatusCodes.Status401Unauthorized,
-                    extensions: twoFactor ? new Dictionary<string, object?> { ["twoFactorRequired"] = true } : null);
-            }
-        }).AllowAnonymous().RequireRateLimiting(LoginRateLimit);
 
-        // Public demo only: one click signs in as a seeded synthetic user. Not available unless Demo:Enabled.
-        api.MapPost("/demo-login", async (DemoLoginRequest req, ClinicReportDbContext db, IOptions<DemoOptions> demo, SecurityLog log, HttpContext http) =>
+                // Hash even when the user does not exist so timing does not reveal valid user names.
+                var result = hasher.VerifyHashedPassword(user ?? new AppUser(), user?.PasswordHash ?? DummyHash, req.Password ?? "");
+                if (user is null || result == PasswordVerificationResult.Failed)
+                    return await Failed(user, "Wrong password", "Wrong user name or password.");
+
+                if (result == PasswordVerificationResult.SuccessRehashNeeded)
+                    user.PasswordHash = hasher.HashPassword(user, req.Password!);
+
+                if (user.TwoFactorEnabled)
+                {
+                    if (string.IsNullOrWhiteSpace(req.Code))
+                        return Results.Problem("Enter the 6-digit code from your authenticator app.", statusCode: StatusCodes.Status401Unauthorized,
+                            extensions: new Dictionary<string, object?> { ["twoFactorRequired"] = true });
+                    var secret = protection.CreateProtector(TwoFactorPurpose).Unprotect(user.TwoFactorSecret!);
+                    if (Totp.Verify(secret, req.Code, now, user.TwoFactorLastStep) is not { } step)
+                        return await Failed(user, "Wrong two-factor code", "That code is wrong or already used.", twoFactor: true);
+                    user.TwoFactorLastStep = step;
+                }
+
+                user.FailedLoginCount = 0;
+                user.LockoutEndUtc = null;
+                user.LastLoginAt = now.UtcDateTime;
+                log.Add(SecurityEventTypes.LoginSucceeded, user.Id);
+                await db.SaveChangesAsync();
+                await AuthSetup.SignInAsync(http, user);
+                return Results.Ok(ToMe(user));
+
+                async Task<IResult> Failed(AppUser? u, string detail, string message, bool twoFactor = false)
+                {
+                    if (u is not null)
+                    {
+                        u.FailedLoginCount++;
+                        if (u.FailedLoginCount >= MaxFailedLogins)
+                        {
+                            u.FailedLoginCount = 0;
+                            u.LockoutEndUtc = now.UtcDateTime + LockoutDuration;
+                            log.Add(SecurityEventTypes.LockedOut, u.Id);
+                        }
+                    }
+                    log.Add(SecurityEventTypes.LoginFailed, u?.Id, detail: u is null ? $"Unknown user name \"{Short(userName)}\"" : detail);
+                    await db.SaveChangesAsync();
+                    return Results.Problem(message, statusCode: StatusCodes.Status401Unauthorized,
+                        extensions: twoFactor ? new Dictionary<string, object?> { ["twoFactorRequired"] = true } : null);
+                }
+            }).AllowAnonymous().RequireRateLimiting(LoginRateLimit).AddEndpointFilter(LocalAccountsOnly);
+
+            // Public demo only: one click signs in as a seeded synthetic user. Not available unless Demo:Enabled.
+            api.MapPost("/demo-login", async (DemoLoginRequest req, ClinicReportDbContext db, IOptions<DemoOptions> demo, SecurityLog log, HttpContext http) =>
+            {
+                if (!demo.Value.Enabled)
+                    return Results.NotFound();
+                var user = await db.Users.Include(u => u.Roles).ThenInclude(ur => ur.Role)
+                    .SingleOrDefaultAsync(u => u.UserName == req.UserName && u.IsActive);
+                if (user is null || !DemoSeeder.DemoUserNames.Contains(user.UserName))
+                    return Results.NotFound();
+                user.LastLoginAt = DateTime.UtcNow;
+                log.Add(SecurityEventTypes.LoginSucceeded, user.Id, detail: "Demo sign-in");
+                await db.SaveChangesAsync();
+                await AuthSetup.SignInAsync(http, user);
+                return Results.Ok(ToMe(user));
+            }).AllowAnonymous().RequireRateLimiting(LoginRateLimit).AddEndpointFilter(LocalAccountsOnly);
+
+        }
+
+        // Connected to ClinicHub: sign-in starts there and comes back to /signin-oidc.
+        api.MapGet("/sso/start", (string? returnUrl, HttpContext http) =>
+            http.RequestServices.IsConnected()
+                ? Results.Challenge(new AuthenticationProperties { RedirectUri = LocalPath(returnUrl) }, [ClinicHubConnection.Scheme])
+                : Results.NotFound()).AllowAnonymous();
+
+        // Signs out here and at ClinicHub (one sign-in, one sign-out), then comes back to the start page.
+        api.MapGet("/sso/signout", async (ClaimsPrincipal principal, HttpContext http, IServiceProvider services) =>
         {
-            if (!demo.Value.Enabled)
+            if (!services.IsConnected())
                 return Results.NotFound();
-            var user = await db.Users.Include(u => u.Roles).ThenInclude(ur => ur.Role)
-                .SingleOrDefaultAsync(u => u.UserName == req.UserName && u.IsActive);
-            if (user is null || !DemoSeeder.DemoUserNames.Contains(user.UserName))
-                return Results.NotFound();
-            user.LastLoginAt = DateTime.UtcNow;
-            log.Add(SecurityEventTypes.LoginSucceeded, user.Id, detail: "Demo sign-in");
-            await db.SaveChangesAsync();
-            await AuthSetup.SignInAsync(http, user);
-            return Results.Ok(ToMe(user));
-        }).AllowAnonymous().RequireRateLimiting(LoginRateLimit);
+            if (principal.UserId() is { } id && principal.FindFirstValue(ClinicHubClaims.Clinic) is not null)
+                await services.GetRequiredService<SecurityLog>().WriteAsync(SecurityEventTypes.Logout, id);
+            return Results.SignOut(new AuthenticationProperties { RedirectUri = "/" },
+                [CookieAuthenticationDefaults.AuthenticationScheme, ClinicHubConnection.Scheme]);
+        }).AllowAnonymous();
 
         api.MapPost("/logout", async (ClaimsPrincipal principal, SecurityLog log, HttpContext http) =>
         {
@@ -117,10 +148,27 @@ public static class AuthEndpoints
             return Results.NoContent();
         }).AllowAnonymous();
 
-        api.MapGet("/me", async (ClaimsPrincipal principal, ClinicReportDbContext db) =>
-            await LoadUser(db, principal.UserId()) is { } user ? Results.Ok(ToMe(user)) : Results.NoContent()).AllowAnonymous();
+        api.MapGet("/me", async (ClaimsPrincipal principal, IServiceProvider services) =>
+        {
+            if (principal.UserId() is null)
+                return Results.NoContent();
+            var db = services.GetRequiredService<ClinicReportDbContext>();
+            if (principal.FindFirstValue(ClinicHubClaims.Clinic) is { } clinic)
+            {
+                // Connected: roles and permissions as ClinicHub granted them (on the request principal).
+                var u = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == principal.UserId());
+                return u is null ? Results.NoContent() : Results.Ok(new MeDto(u.Id, u.UserName, u.DisplayName, u.Credentials,
+                    principal.FindAll(ClaimTypes.Role).Select(c => c.Value).OrderBy(r => r).ToArray(),
+                    principal.FindAll(AppClaims.Permission).Select(c => c.Value).ToArray(), principal.ServiceScope(),
+                    TwoFactorEnabled: false, TwoFactorRequired: false, PendingAction: null,
+                    Clinic: principal.FindFirstValue(ClinicHubClaims.ClinicName) ?? clinic));
+            }
+            return await LoadUser(db, principal.UserId()) is { } user ? Results.Ok(ToMe(user)) : Results.NoContent();
+        }).AllowAnonymous();
 
-        var account = api.MapGroup("").AddEndpointFilter(UserEndpoints.DemoReadOnly);
+        if (connected)
+            return;
+        var account = api.MapGroup("").AddEndpointFilter(UserEndpoints.DemoReadOnly).AddEndpointFilter(LocalAccountsOnly);
 
         account.MapPost("/password", async (ChangePasswordRequest req, ClaimsPrincipal principal, ClinicReportDbContext db,
             IPasswordHasher<AppUser> hasher, SecurityLog log, HttpContext http) =>
@@ -214,6 +262,16 @@ public static class AuthEndpoints
     }
 
     public static string NewStamp() => Guid.NewGuid().ToString("N");
+
+    /// <summary>Connected to ClinicHub, passwords, two-factor and roles are ClinicHub's: these endpoints are closed.</summary>
+    public static async ValueTask<object?> LocalAccountsOnly(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next) =>
+        ctx.HttpContext.RequestServices.IsConnected()
+            ? Results.Problem("Sign-in, passwords, two-factor and roles are managed in ClinicHub for this installation.", statusCode: StatusCodes.Status409Conflict)
+            : await next(ctx);
+
+    /// <summary>A path on this site only, so the sign-in can't be used to send someone elsewhere.</summary>
+    private static string LocalPath(string? url) =>
+        url is { Length: > 0 } && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/";
 
     private static string Short(string s) => s.Length > 40 ? s[..40] : s;
 

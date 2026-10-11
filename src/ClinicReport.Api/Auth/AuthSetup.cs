@@ -48,22 +48,27 @@ public static class AuthSetup
     /// <summary>Unsafe API requests must carry this header. Browsers cannot add it cross-site without a CORS preflight, which this API never allows.</summary>
     public const string CsrfHeader = "X-ClinicReport";
 
-    public static void AddClinicAuth(this IServiceCollection services)
+    public static void AddClinicAuth(this IServiceCollection services, IConfiguration config)
     {
-        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        var connected = config.GetSection("ClinicHub").Get<ClinicHubOptions>()?.Enabled == true;
+        var authentication = services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie(o =>
             {
                 o.Cookie.Name = "clinicreport.auth";
                 o.Cookie.HttpOnly = true;
-                o.Cookie.SameSite = SameSiteMode.Strict;
+                // Connected: the browser arrives from ClinicHub's sign-in, a navigation a Strict cookie would not survive.
+                o.Cookie.SameSite = connected ? SameSiteMode.Lax : SameSiteMode.Strict;
                 o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 o.ExpireTimeSpan = TimeSpan.FromHours(12);
                 o.SlidingExpiration = true;
                 // An API answers 401/403; it never redirects to a login page.
                 o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
                 o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
-                o.Events.OnValidatePrincipal = LoadCurrentAccess;
+                o.Events.OnValidatePrincipal = ctx => ctx.Principal?.HasClaim(c => c.Type == ClinicHubClaims.Clinic) == true
+                    ? ClinicHubConnection.ValidateAsync(ctx)
+                    : LoadCurrentAccess(ctx);
             });
+        services.AddClinicHubSignIn(config, authentication);
 
         var auth = services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
@@ -85,6 +90,12 @@ public static class AuthSetup
     {
         var id = ctx.Principal?.UserId();
         var stamp = ctx.Principal?.FindFirstValue(AppClaims.Stamp);
+        // A local session presented to a connected installation has no database to check against.
+        if (ctx.HttpContext.RequestServices.IsConnected())
+        {
+            ctx.RejectPrincipal();
+            return;
+        }
         var db = ctx.HttpContext.RequestServices.GetRequiredService<ClinicReportDbContext>();
         var user = id is null ? null : await db.Users.AsNoTracking()
             .Include(u => u.Roles).ThenInclude(ur => ur.Role)

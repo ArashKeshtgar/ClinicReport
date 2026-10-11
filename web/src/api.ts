@@ -11,6 +11,8 @@ export type Me = {
   id: number; userName: string; displayName: string; credentials: string | null
   roles: string[]; permissions: Permission[]; services: string[] | null
   twoFactorEnabled: boolean; twoFactorRequired: boolean; pendingAction: PendingAction | null
+  /** Connected to ClinicHub: the clinic chosen there (this clinic's own database serves the session). */
+  clinic?: string
 }
 
 export const can = (me: Me, p: Permission) => me.permissions.includes(p)
@@ -18,6 +20,8 @@ export const can = (me: Me, p: Permission) => me.permissions.includes(p)
 export type Settings = {
   name: string; address: string | null; phone: string | null; reportFooter: string | null
   demo: boolean; accountsLocked: boolean; demoUsers: string[]
+  /** "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles. */
+  signIn: 'local' | 'clinichub'; clinicHubUrl: string | null
 }
 
 export type Sex = 'M' | 'F' | 'X' | 'U'
@@ -68,6 +72,8 @@ export type User = {
   id: number; userName: string; displayName: string; credentials: string | null; isActive: boolean
   roleIds: number[]; roles: string[]; services: string[]; permissions: Permission[]
   twoFactorEnabled: boolean; twoFactorRequired: boolean; mustChangePassword: boolean; isLockedOut: boolean
+  /** Signs in through ClinicHub: only services and access to ClinicReport are set here. */
+  managedByClinicHub?: boolean
   lastLoginAt: string | null; createdAt: string
 }
 

@@ -14,7 +14,7 @@ public static class UserEndpoints
         int Id, string UserName, string DisplayName, string? Credentials, bool IsActive,
         int[] RoleIds, string[] Roles, string[] Services, string[] Permissions,
         bool TwoFactorEnabled, bool TwoFactorRequired, bool MustChangePassword, bool IsLockedOut,
-        DateTime? LastLoginAt, DateTime CreatedAt);
+        DateTime? LastLoginAt, DateTime CreatedAt, bool ManagedByClinicHub = false);
 
     public record CreateUser(string UserName, string DisplayName, string? Credentials, int[] RoleIds, string[]? Services, string Password);
     public record UpdateUser(string DisplayName, string? Credentials, int[] RoleIds, string[]? Services, bool IsActive);
@@ -82,13 +82,27 @@ public static class UserEndpoints
                 $"Roles: {string.Join(", ", roles.Select(r => r.Name))}; services: {ServicesText(req.Services)}");
             var created = await LoadAsync(db, user.Id);
             return Results.Created($"/api/users/{user.Id}", ToDto(created!, now));
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         admin.MapPut("/users/{id:int}", async (int id, UpdateUser req, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log, TimeProvider clock) =>
         {
             var user = await LoadAsync(db, id, tracked: true);
             if (user is null)
                 return Results.NotFound();
+            if (user.ExternalId is not null)
+            {
+                // Signs in through ClinicHub: name and roles are ClinicHub's; here, the services and whether they may use ClinicReport.
+                if ((req.Services ?? []).Any(s => string.IsNullOrWhiteSpace(s) || s.Length > 64 || s.Contains('\n')))
+                    return Results.ValidationProblem(new Dictionary<string, string[]> { ["services"] = ["Invalid service name."] });
+                var was = $"{(user.IsActive ? "active" : "inactive")}; services: {ServicesText(user.ServiceList())}";
+                user.Services = FormatServices(req.Services);
+                if (user.IsActive != req.IsActive)
+                    user.SecurityStamp = AuthEndpoints.NewStamp();
+                user.IsActive = req.IsActive;
+                log.Add(SecurityEventTypes.UserUpdated, me.RequiredUserId(), user.Id, $"{was} → {(user.IsActive ? "active" : "inactive")}; services: {ServicesText(user.ServiceList())}");
+                await db.SaveChangesAsync();
+                return Results.Ok(ToDto((await LoadAsync(db, id))!, clock.GetUtcNow().UtcDateTime));
+            }
             var errors = new Dictionary<string, string[]>();
             var roles = await ValidateCommon(db, req.DisplayName, req.RoleIds, req.Services, errors);
             if (errors.Count > 0)
@@ -131,7 +145,7 @@ public static class UserEndpoints
             log.Add(SecurityEventTypes.PasswordReset, me.RequiredUserId(), id);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         admin.MapPost("/users/{id:int}/unlock", async (int id, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log) =>
         {
@@ -143,7 +157,7 @@ public static class UserEndpoints
             log.Add(SecurityEventTypes.UserUnlocked, me.RequiredUserId(), id);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         // For a lost phone: the user sets two-factor up again at next sign-in if a role requires it.
         admin.MapPost("/users/{id:int}/two-factor/reset", async (int id, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log) =>
@@ -157,7 +171,7 @@ public static class UserEndpoints
             log.Add(SecurityEventTypes.TwoFactorReset, me.RequiredUserId(), id);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         admin.MapPost("/users/{id:int}/sessions/revoke", async (int id, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log) =>
         {
@@ -185,7 +199,7 @@ public static class UserEndpoints
             await db.SaveChangesAsync();
             await log.WriteAsync(SecurityEventTypes.RoleCreated, me.RequiredUserId(), detail: $"{role.Name}: {role.Permissions}");
             return Results.Created($"/api/roles/{role.Id}", ToDto(role));
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         admin.MapPut("/roles/{id:int}", async (int id, SaveRole req, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log) =>
         {
@@ -207,7 +221,7 @@ public static class UserEndpoints
                 detail: $"{before} → {role.Name}: {role.Permissions}{(role.RequireTwoFactor ? " +2FA" : "")}");
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(role));
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         admin.MapDelete("/roles/{id:int}", async (int id, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log) =>
         {
@@ -222,7 +236,7 @@ public static class UserEndpoints
             log.Add(SecurityEventTypes.RoleDeleted, me.RequiredUserId(), detail: role.Name);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
         // ---- audit log ----
 
@@ -272,7 +286,8 @@ public static class UserEndpoints
         var access = Access.For(u);
         return new UserDto(u.Id, u.UserName, u.DisplayName, u.Credentials, u.IsActive,
             u.Roles.Select(r => r.RoleId).ToArray(), access.Roles, u.ServiceList().ToArray(), access.Permissions,
-            u.TwoFactorEnabled, access.TwoFactorRequired, u.MustChangePassword, u.LockoutEndUtc > now, u.LastLoginAt, u.CreatedAt);
+            u.TwoFactorEnabled, access.TwoFactorRequired, u.MustChangePassword, u.LockoutEndUtc > now, u.LastLoginAt, u.CreatedAt,
+            u.ExternalId is not null);
     }
 
     private static RoleDto ToDto(Role r) =>

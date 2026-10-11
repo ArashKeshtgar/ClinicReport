@@ -21,6 +21,12 @@ public class AppUser
     /// <summary>Printed under the signature, e.g. "MD, FRCPC".</summary>
     public string? Credentials { get; set; }
 
+    /// <summary>
+    /// "clinichub:{account id}" for a person who signs in through ClinicHub (connected mode); null for a local
+    /// account. Such a user has no password here: ClinicHub holds it, and their roles.
+    /// </summary>
+    public string? ExternalId { get; set; }
+
     public string PasswordHash { get; set; } = "";
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }

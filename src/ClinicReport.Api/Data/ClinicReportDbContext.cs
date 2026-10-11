@@ -26,6 +26,8 @@ public class ClinicReportDbContext(DbContextOptions<ClinicReportDbContext> optio
             e.Property(u => u.Services).HasMaxLength(2000);
             e.Property(u => u.SecurityStamp).HasMaxLength(64);
             e.Property(u => u.TwoFactorSecret).HasMaxLength(1000);
+            e.Property(u => u.ExternalId).HasMaxLength(64);
+            e.HasIndex(u => u.ExternalId).IsUnique().HasFilter("ExternalId IS NOT NULL");
         });
 
         b.Entity<Role>(e =>

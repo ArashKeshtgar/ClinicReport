@@ -32,7 +32,7 @@ builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ReportRuleHandler>();
 builder.Services.AddOpenApi();
-builder.Services.AddClinicAuth();
+builder.Services.AddClinicAuth(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull);
 
 var loginsPerMinute = builder.Configuration.GetValue("RateLimits:LoginsPerMinute", 10);
@@ -46,8 +46,11 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-    await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
+// Standalone: one database, prepared now. Connected to ClinicHub: one database per clinic, prepared at its first sign-in.
+var connected = app.Services.IsConnected();
+if (!connected)
+    using (var scope = app.Services.CreateScope())
+        await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -62,12 +65,15 @@ app.UsePendingActionGate();
 app.UseAuthorization();
 app.UseCsrfHeaderCheck();
 
-app.MapGet("/api/settings", (IOptions<ClinicOptions> clinic, IOptions<DemoOptions> demo) => new
+app.MapGet("/api/settings", (IOptions<ClinicOptions> clinic, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub) => new
 {
     clinic.Value.Name, clinic.Value.Address, clinic.Value.Phone, clinic.Value.ReportFooter,
-    Demo = demo.Value.Enabled,
+    Demo = demo.Value.Enabled && !hub.Value.Enabled,
     AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,
-    DemoUsers = demo.Value.Enabled ? DemoSeeder.DemoUserNames : [],
+    DemoUsers = demo.Value.Enabled && !hub.Value.Enabled ? DemoSeeder.DemoUserNames : [],
+    // "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles.
+    SignIn = hub.Value.Enabled ? "clinichub" : "local",
+    ClinicHubUrl = hub.Value.Enabled ? hub.Value.Authority : null,
 }).AllowAnonymous();
 
 app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
