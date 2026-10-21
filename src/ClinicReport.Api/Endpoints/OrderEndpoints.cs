@@ -129,17 +129,19 @@ public static class OrderEndpoints
         var api = app.MapGroup("/api/orders").WithTags("Orders");
 
         // Exams waiting to be done (and the ones started today), for the worklist.
-        api.MapGet("/", async (ClaimsPrincipal user, ClinicReportDbContext db, TimeProvider clock) =>
+        api.MapGet("/", async (ClaimsPrincipal user, ClinicReportDbContext db, ConfidentialityGate gate, TimeProvider clock) =>
         {
             var since = clock.GetUtcNow().UtcDateTime.Date;
             var services = user.ServiceScope();
-            return await db.ReportOrders.AsNoTracking()
+            var rows = await db.ReportOrders.AsNoTracking()
                 .Where(o => o.Status == ReportOrderStatus.Waiting || (o.Status == ReportOrderStatus.Started && o.ReceivedAt >= since))
                 .Where(o => services == null || services.Contains(o.Template.Service))
                 .OrderByDescending(o => o.Priority == "Stat").ThenBy(o => o.ReceivedAt)
                 .Select(o => new OrderRow(o.Id, o.Patient.LastName + ", " + o.Patient.FirstName, o.Patient.Mrn, o.Template.Name, o.Template.Service,
                     o.Indication, o.ReferringPhysician, o.Priority, o.ReceivedAt, o.Status, o.ReportId, o.Confidentiality))
                 .ToListAsync();
+            // A restricted order is listed, so it is not lost, but who it is for and why stay hidden until the glass is broken.
+            return rows.Select(o => o.Confidentiality is null || gate.IsOpen(user, $"order:{o.Id}") ? o : o with { Patient = "Restricted", Mrn = "", Indication = null, ReferringPhysician = null }).ToList();
         }).RequireAuthorization(Permissions.ReportsView);
 
         // Starting an ordered exam: a draft report on the template, with the order's indication and referring physician.

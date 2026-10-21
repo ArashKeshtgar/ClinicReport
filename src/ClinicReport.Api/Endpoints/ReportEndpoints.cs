@@ -14,7 +14,7 @@ public static class ReportEndpoints
 
     public record WorklistRow(
         int Id, string Status, DateOnly ExamDate, string PatientName, string Mrn, string TemplateName, string Service,
-        string CreatedBy, DateTime UpdatedAt, string? SignedBy, DateTime? SignedAt);
+        string CreatedBy, DateTime UpdatedAt, string? SignedBy, DateTime? SignedAt, string? Confidentiality = null);
 
     public record CreateReport(int PatientId, int TemplateId, DateOnly ExamDate, string? Indication, string? ReferringPhysician, double? HeightCm, double? WeightKg);
     public record ValuesBody(Dictionary<string, JsonElement?> Values);
@@ -45,7 +45,7 @@ public static class ReportEndpoints
             return Results.Ok(new { open = true, until });
         }).RequireAuthorization(Permissions.ReportsView);
 
-        api.MapGet("/", async (string? status, DateOnly? from, DateOnly? to, string? q, ClaimsPrincipal user, ClinicReportDbContext db) =>
+        api.MapGet("/", async (string? status, DateOnly? from, DateOnly? to, string? q, ClaimsPrincipal user, ClinicReportDbContext db, ConfidentialityGate gate) =>
         {
             var query = db.Reports.AsNoTracking();
             if (user.ServiceScope() is { } services)
@@ -61,14 +61,17 @@ public static class ReportEndpoints
                 var term = q.Trim();
                 query = query.Where(r => r.Patient.Mrn == term || r.Patient.LastName.StartsWith(term) || r.Patient.FirstName.StartsWith(term));
             }
-            return await query
+            var rows = await query
                 .OrderBy(r => r.Status == ReportStatus.Draft ? 0 : 1).ThenByDescending(r => r.ExamDate).ThenByDescending(r => r.Id)
                 .Take(200)
                 .Select(r => new WorklistRow(
                     r.Id, r.Status, r.ExamDate, r.Patient.LastName + ", " + r.Patient.FirstName, r.Patient.Mrn,
                     r.TemplateVersion.Template.Name, r.TemplateVersion.Template.Service,
-                    r.CreatedBy.DisplayName, r.UpdatedAt, r.SignedBy != null ? r.SignedBy.DisplayName : null, r.SignedAt))
+                    r.CreatedBy.DisplayName, r.UpdatedAt, r.SignedBy != null ? r.SignedBy.DisplayName : null, r.SignedAt,
+                    db.ReportOrders.Where(o => o.ReportId == r.Id).Select(o => o.Confidentiality).FirstOrDefault()))
                 .ToListAsync();
+            // A report from a restricted order is listed, so it is not lost, but who it is for stays hidden until the glass is broken.
+            return rows.Select(r => r.Confidentiality is null || gate.IsOpen(user, $"report:{r.Id}") ? r : r with { PatientName = "Restricted", Mrn = "" }).ToList();
         }).RequireAuthorization(Permissions.ReportsView);
 
         api.MapPost("/", async (CreateReport req, ClaimsPrincipal user, ClinicReportDbContext db, ReportService reports, TimeProvider clock, CancellationToken ct) =>

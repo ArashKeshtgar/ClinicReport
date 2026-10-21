@@ -269,10 +269,12 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         await Json(await Send(Bundle("912", "HV000912", label: "X"), ConnectedFactory.ServiceToken("harbourview")));   // unknown code: R
         var physician = await factory.SignInAsync("23", "dr.label", "harbourview", Physician);
         var orders = (await Json(await physician.GetAsync("/api/orders"))).AsArray();
-        Assert.Equal("V", (string)orders.Single(o => (string)o!["mrn"]! == "HV000911")!["confidentiality"]!);
-        Assert.Equal("R", (string)orders.Single(o => (string)o!["mrn"]! == "HV000912")!["confidentiality"]!);
-
-        var order = orders.Single(o => (string)o!["mrn"]! == "HV000911")!;
+        // Listed so they are not lost, but who they are for stays hidden until the glass is broken.
+        var order = orders.Single(o => (string?)o!["confidentiality"] == "V")!;
+        Assert.Equal("Restricted", (string)order["patient"]!);
+        Assert.Equal("", (string)order["mrn"]!);
+        Assert.Null(order["indication"]);
+        Assert.Equal("R", (string)orders.Single(o => (string)o!["mrn"]! == "" && (string?)o["confidentiality"] == "R")!["confidentiality"]!);
         var orderId = (int)order["id"]!;
 
         // Closed until someone says why: starting it is refused, a short reason is refused, a real one opens it for them.
@@ -285,9 +287,16 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         (await physician.PostAsJsonAsync($"/api/orders/{orderId}/override", new { reason = "Reporting the echo ordered for chest pain" })).EnsureSuccessStatusCode();
         var id = (int)(await Json(await physician.PostAsync($"/api/orders/{orderId}/start", null)))["reportId"]!;
         Assert.Equal(HttpStatusCode.OK, (await physician.GetAsync($"/api/reports/{id}")).StatusCode);   // the starter carries on
+        // After the override the starter sees the name; the report list hides it from someone who has not opened it.
+        var mine = (await Json(await physician.GetAsync("/api/reports"))).AsArray().Single(r => (int)r!["id"]! == id)!;
+        Assert.Equal("HV000911", (string)mine["mrn"]!);
+        Assert.Equal("V", (string)mine["confidentiality"]!);
 
         // Someone else is still shut out of the report, and the override is on the record with its reason.
         var other = await factory.SignInAsync("27", "dr.glass.second", "harbourview", Physician);
+        var theirs = (await Json(await other.GetAsync("/api/reports"))).AsArray().Single(r => (int)r!["id"]! == id)!;
+        Assert.Equal("Restricted", (string)theirs["patientName"]!);
+        Assert.Equal("", (string)theirs["mrn"]!);
         Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/reports/{id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await other.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "x" })).StatusCode);
         await using (var db = factory.Services.GetRequiredService<ClinicReport.Api.Auth.ClinicReportDatabases>().Create("harbourview"))
