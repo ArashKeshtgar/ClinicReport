@@ -134,6 +134,8 @@ const qs = (params: Record<string, string | undefined>) => {
 export type OrderRow = {
   id: number; patient: string; mrn: string; template: string; service: string; indication: string | null
   referringPhysician: string | null; priority: 'Routine' | 'Stat'; receivedAt: string; status: 'Waiting' | 'Started' | 'Cancelled'; reportId: number | null
+  /** ClinicHub's confidentiality label (a consent directive): R restricted, V very restricted. */
+  confidentiality: 'R' | 'V' | null
 }
 
 export const api = {

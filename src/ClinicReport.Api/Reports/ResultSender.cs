@@ -27,6 +27,11 @@ public static class ResultMessages
         var diagnosticReport = new JsonObject
         {
             ["resourceType"] = "DiagnosticReport",
+            // The order's confidentiality label comes back on its result (IntegrationHub's flow 7).
+            ["meta"] = order.Confidentiality is { } label ? new JsonObject
+            {
+                ["security"] = new JsonArray(new JsonObject { ["system"] = Endpoints.OrderEndpoints.ConfidentialitySystem, ["code"] = label }),
+            } : null,
             ["identifier"] = new JsonArray(new JsonObject { ["system"] = $"urn:clinicreport:{slug}:report", ["value"] = report.Id.ToString() }),
             ["basedOn"] = new JsonArray(new JsonObject
             {

@@ -272,6 +272,12 @@ public class ReportOrder
     /// <summary>Withdrawn by the ordering clinic before the exam was started.</summary>
     public DateTime? CancelledAt { get; set; }
     public string? CancelReason { get; set; }
+
+    /// <summary>
+    /// The confidentiality label ClinicHub put on the order (a consent directive, HL7 v3 Confidentiality): R restricted
+    /// or V very restricted; null for none. It goes back on the result.
+    /// </summary>
+    public string? Confidentiality { get; set; }
 }
 
 /// <summary>A financial document FinancePowerApp has accepted, so it is sent once.</summary>

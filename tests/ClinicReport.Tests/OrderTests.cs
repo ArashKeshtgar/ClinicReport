@@ -13,7 +13,7 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
     private static readonly string[] Physician = ["reports.view", "reports.create", "reports.edit", "reports.sign", "patients.manage"];
 
     /// <summary>What ClinicHub's outbox sends (see ClinicHub's FhirOrderBundle).</summary>
-    private static string Bundle(string orderId, string mrn, string template = "echo-tte", string family = "Wilson") => new JsonObject
+    private static string Bundle(string orderId, string mrn, string template = "echo-tte", string family = "Wilson", string? label = null) => new JsonObject
     {
         ["resourceType"] = "Bundle", ["type"] = "transaction",
         ["identifier"] = new JsonObject { ["system"] = "urn:clinichub:harbourview:requisition", ["value"] = $"R{orderId}" },
@@ -34,6 +34,10 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
             Entry(new JsonObject
             {
                 ["resourceType"] = "ServiceRequest",
+                ["meta"] = label is null ? null : new JsonObject
+                {
+                    ["security"] = new JsonArray(new JsonObject { ["system"] = "http://terminology.hl7.org/CodeSystem/v3-Confidentiality", ["code"] = label }),
+                },
                 ["identifier"] = new JsonArray(new JsonObject { ["system"] = "urn:clinichub:harbourview:service-request", ["value"] = orderId }),
                 ["status"] = "active", ["intent"] = "order", ["priority"] = "stat",
                 ["code"] = new JsonObject { ["coding"] = new JsonArray(new JsonObject { ["system"] = "urn:clinicreport:template", ["code"] = template }) },
@@ -255,5 +259,77 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         Assert.Equal(60.00m, (decimal)lines.Single(l => (string)l!["category"]! == "OHIP.Technical")!["amount"]!);
         Assert.Equal(40.00m, (decimal)lines.Single(l => (string)l!["category"]! == "Diagnostics.Echo")!["amount"]!);
         Assert.DoesNotContain("Feeless", doc.ToJsonString());
+    }
+
+    [Fact]
+    public async Task A_labelled_order_shows_its_label_and_its_result_carries_it_back()
+    {
+        KeepSignedIn();
+        await Json(await Send(Bundle("911", "HV000911", label: "V"), ConnectedFactory.ServiceToken("harbourview")));
+        await Json(await Send(Bundle("912", "HV000912", label: "X"), ConnectedFactory.ServiceToken("harbourview")));   // unknown code: R
+        var physician = await factory.SignInAsync("23", "dr.label", "harbourview", Physician);
+        var orders = (await Json(await physician.GetAsync("/api/orders"))).AsArray();
+        Assert.Equal("V", (string)orders.Single(o => (string)o!["mrn"]! == "HV000911")!["confidentiality"]!);
+        Assert.Equal("R", (string)orders.Single(o => (string)o!["mrn"]! == "HV000912")!["confidentiality"]!);
+
+        var order = orders.Single(o => (string)o!["mrn"]! == "HV000911")!;
+        var id = (int)(await Json(await physician.PostAsync($"/api/orders/{(int)order["id"]!}/start", null)))["reportId"]!;
+        foreach (var section in new[] { "study", "lv", "rv", "mitral", "aortic", "tricuspid", "pericardium" })
+            (await physician.PostAsync($"/api/reports/{id}/presets/{section}", null)).EnsureSuccessStatusCode();
+        (await physician.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "Normal study." })).EnsureSuccessStatusCode();
+        factory.Hub.Down = false;
+        await Json(await physician.PostAsync($"/api/reports/{id}/sign", null));
+        await factory.Services.GetRequiredService<ClinicReport.Api.Reports.ResultSender>().SendAsync();
+        var report = factory.Hub.Results.Last().Body["entry"]![0]!["resource"]!;
+        Assert.Equal("911", (string)report["basedOn"]![0]!["identifier"]!["value"]!);
+        Assert.Equal("V", (string)report["meta"]!["security"]![0]!["code"]!);
+    }
+
+    private static string Merge(string merged, string survivor) => new JsonObject
+    {
+        ["resourceType"] = "Bundle", ["type"] = "transaction",
+        ["entry"] = new JsonArray(new JsonObject
+        {
+            ["resource"] = new JsonObject
+            {
+                ["resourceType"] = "Patient", ["active"] = false,
+                ["identifier"] = new JsonArray(new JsonObject { ["system"] = "urn:clinichub:harbourview:mrn", ["value"] = merged }),
+                ["link"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "replaced-by",
+                    ["other"] = new JsonObject { ["identifier"] = new JsonObject { ["system"] = "urn:clinichub:harbourview:mrn", ["value"] = survivor } },
+                }),
+            },
+            ["request"] = new JsonObject { ["method"] = "PUT", ["url"] = $"Patient?identifier=urn:clinichub:harbourview:mrn|{merged}" },
+        }),
+    }.ToJsonString();
+
+    [Fact]
+    public async Task A_merge_moves_the_merged_patients_orders_to_the_survivor()
+    {
+        KeepSignedIn();
+        var token = ConnectedFactory.ServiceToken("harbourview");
+        await Json(await Send(Bundle("921", "HV000921"), token));
+        await Json(await Send(Bundle("922", "HV000922"), token));
+        await Json(await Send(Bundle("923", "HV000923"), token));
+
+        // Both records known here: the merged one's orders move and it goes.
+        await Json(await Send(Merge("HV000921", "HV000922"), token));
+        // Only the merged one known: it takes the survivor's MRN.
+        await Json(await Send(Merge("HV000923", "HV000924"), token));
+        // Never seen here: nothing to do, still 200.
+        await Json(await Send(Merge("HV000999", "HV000998"), token));
+
+        var reader = await factory.SignInAsync("24", "dr.merge", "harbourview", Physician);
+        var mrns = (await Json(await reader.GetAsync("/api/orders"))).AsArray().Select(o => (string)o!["mrn"]!).ToList();
+        Assert.Equal(2, mrns.Count(m => m == "HV000922"));
+        Assert.Contains("HV000924", mrns);
+        Assert.DoesNotContain("HV000921", mrns);
+        Assert.DoesNotContain("HV000923", mrns);
+        await using var db = factory.Services.GetRequiredService<ClinicReport.Api.Auth.ClinicReportDatabases>().Create("harbourview");
+        Assert.False(db.Patients.Any(p => p.Mrn == "HV000921" || p.Mrn == "HV000999"));
+
+        var bad = await Send(Merge("HV000922", "HV000922"), token);
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
     }
 }

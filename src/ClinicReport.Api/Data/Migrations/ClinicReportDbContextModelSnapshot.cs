@@ -303,6 +303,9 @@ namespace ClinicReport.Api.Data.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Confidentiality")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ExternalId")
                         .IsRequired()
                         .HasMaxLength(80)

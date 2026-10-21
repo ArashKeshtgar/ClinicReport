@@ -16,9 +16,20 @@ namespace ClinicReport.Api.Endpoints;
 public static class OrderEndpoints
 {
     public const string TemplateSystem = "urn:clinicreport:template";
+    public const string ConfidentialitySystem = "http://terminology.hl7.org/CodeSystem/v3-Confidentiality";
+
+    /// <summary>The order's label: R or V, any other code of that system treated as R (the contract's rule); null for none.</summary>
+    public static string? Confidentiality(JsonNode? resource)
+    {
+        var codes = resource?["meta"]?["security"]?.AsArray().Where(c => (string?)c?["system"] == ConfidentialitySystem)
+            .Select(c => (string?)c!["code"]).Where(c => !string.IsNullOrEmpty(c)).ToList() ?? [];
+        if (codes.Count == 0 || codes.All(c => c is "U" or "L" or "M" or "N"))
+            return null;
+        return codes.Contains("V") ? "V" : "R";
+    }
 
     public record OrderRow(int Id, string Patient, string Mrn, string Template, string Service, string? Indication, string? ReferringPhysician,
-        string Priority, DateTime ReceivedAt, string Status, int? ReportId);
+        string Priority, DateTime ReceivedAt, string Status, int? ReportId, string? Confidentiality);
 
     public static void MapOrderEndpoints(this IEndpointRouteBuilder app)
     {
@@ -33,6 +44,8 @@ public static class OrderEndpoints
             if ((string?)bundle?["resourceType"] != "Bundle" || (string?)bundle["type"] != "transaction")
                 return Outcome("Expected a FHIR transaction Bundle.");
             var entries = bundle["entry"]?.AsArray().Select(e => e?["resource"]).ToList() ?? [];
+            if (entries is [{ } only] && (string?)only["resourceType"] == "Patient" && only["link"] is not null)
+                return await MergeAsync(db, hub.FindFirstValue("clinic_slug")!, only);
             var revoked = entries.Where(r => (string?)r?["resourceType"] == "ServiceRequest" && (string?)r?["status"] == "revoked").ToList();
             if (revoked.Count > 0)
                 return revoked.Count == entries.Count
@@ -90,6 +103,7 @@ public static class OrderEndpoints
                     ReferringPhysician = string.IsNullOrWhiteSpace(referring) ? null : referring,
                     Priority = (string?)o["priority"] == "stat" ? "Stat" : "Routine",
                     ReceivedAt = now, OrderedAt = DateTime.TryParse((string?)o["authoredOn"], out var at) ? at.ToUniversalTime() : null,
+                    Confidentiality = Confidentiality(o),
                 };
                 db.ReportOrders.Add(order);
                 saved.Add(order);
@@ -124,7 +138,7 @@ public static class OrderEndpoints
                 .Where(o => services == null || services.Contains(o.Template.Service))
                 .OrderByDescending(o => o.Priority == "Stat").ThenBy(o => o.ReceivedAt)
                 .Select(o => new OrderRow(o.Id, o.Patient.LastName + ", " + o.Patient.FirstName, o.Patient.Mrn, o.Template.Name, o.Template.Service,
-                    o.Indication, o.ReferringPhysician, o.Priority, o.ReceivedAt, o.Status, o.ReportId))
+                    o.Indication, o.ReferringPhysician, o.Priority, o.ReceivedAt, o.Status, o.ReportId, o.Confidentiality))
                 .ToListAsync();
         }).RequireAuthorization(Permissions.ReportsView);
 
@@ -159,6 +173,43 @@ public static class OrderEndpoints
     }
 
     /// <summary>Withdrawn exams: cancelled if still waiting, refused (409) once the report is started. All or nothing.</summary>
+    /// <summary>
+    /// ClinicHub merged two records (IntegrationHub's flow 6): the merged MRN, inactive, replaced by the survivor's.
+    /// What is held for the merged MRN moves to the survivor's: when only the merged one is known here it takes the
+    /// survivor's MRN; when both are, the merged one's reports and orders move and it is removed. A patient never seen
+    /// here is nothing to do. Both are 200.
+    /// </summary>
+    private static async Task<IResult> MergeAsync(ClinicReportDbContext db, string slug, JsonNode patient)
+    {
+        var system = $"urn:clinichub:{slug}:mrn";
+        var merged = (string?)patient["identifier"]?.AsArray().FirstOrDefault(i => (string?)i?["system"] == system)?["value"];
+        var replacedBy = patient["link"]?.AsArray().FirstOrDefault(l => (string?)l?["type"] == "replaced-by")?["other"]?["identifier"];
+        var survivor = (string?)replacedBy?["system"] == system ? (string?)replacedBy?["value"] : null;
+        if (string.IsNullOrWhiteSpace(merged) || string.IsNullOrWhiteSpace(survivor) || merged == survivor)
+            return Outcome($"A merge names the merged and the surviving MRN, both {system}.");
+
+        var old = await db.Patients.SingleOrDefaultAsync(p => p.Mrn == merged);
+        if (old is not null)
+        {
+            var keep = await db.Patients.SingleOrDefaultAsync(p => p.Mrn == survivor);
+            if (keep is null)
+                old.Mrn = survivor;
+            else
+            {
+                await db.Reports.Where(r => r.PatientId == old.Id).ExecuteUpdateAsync(u => u.SetProperty(r => r.PatientId, keep.Id));
+                await db.ReportOrders.Where(o => o.PatientId == old.Id).ExecuteUpdateAsync(u => u.SetProperty(o => o.PatientId, keep.Id));
+                await db.SecurityEvents.Where(e => e.PatientId == old.Id).ExecuteUpdateAsync(u => u.SetProperty(e => e.PatientId, keep.Id));
+                db.Patients.Remove(old);
+            }
+            await db.SaveChangesAsync();
+        }
+        return Results.Text(new JsonObject
+        {
+            ["resourceType"] = "Bundle", ["type"] = "transaction-response",
+            ["entry"] = new JsonArray(new JsonObject { ["response"] = new JsonObject { ["status"] = "200 OK" } }),
+        }.ToJsonString(), "application/fhir+json");
+    }
+
     private static async Task<IResult> CancelAsync(ClinicReportDbContext db, string slug, List<JsonNode> revoked, DateTime now)
     {
         var system = $"urn:clinichub:{slug}:service-request";

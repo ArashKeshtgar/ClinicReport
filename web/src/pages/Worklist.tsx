@@ -103,7 +103,10 @@ function Ordered() {
             {waiting.map(o => (
               <tr key={o.id}>
                 <td className="muted nowrap">{formatDateTime(o.receivedAt)}{o.priority === 'Stat' && <span className="badge warn" style={{ marginLeft: '.4rem' }}>STAT</span>}</td>
-                <td>{o.patient}</td>
+                <td>{o.patient}{o.confidentiality && (
+                  <span className="badge" title="The patient has a consent directive at the clinic: share this exam only with those caring for them">
+                    {o.confidentiality === 'V' ? ' Very restricted' : ' Restricted'}
+                  </span>)}</td>
                 <td className="mono">{o.mrn}</td>
                 <td>{o.template}</td>
                 <td className="small">{o.indication ?? <span className="muted">—</span>}</td>
