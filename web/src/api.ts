@@ -91,6 +91,9 @@ export type AuditRow = {
 export type Change = { at: string; user: string; field: string; value: string | null }
 
 /** Thrown for any non-2xx response. `fieldErrors` is filled for 400 validation problems. */
+/** The 403 a restricted item answers with until the user has said why they need it. */
+export const isRestricted = (e: unknown): e is ApiError => e instanceof ApiError && e.status === 403 && e.data.code === 'restricted'
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public fieldErrors: Record<string, string[]> = {}, public data: Record<string, unknown> = {}) {
     super(message)
@@ -141,6 +144,9 @@ export type OrderRow = {
 export const api = {
   orders: () => request<OrderRow[]>('GET', '/api/orders'),
   startOrder: (id: number) => request<{ reportId: number }>('POST', `/api/orders/${id}/start`),
+  /** Break the glass for a restricted order or report (a consent directive at the clinic): a reason, logged. */
+  overrideOrder: (id: number, reason: string) => request<{ open: boolean }>('POST', `/api/orders/${id}/override`, { reason }),
+  overrideReport: (id: number, reason: string) => request<{ open: boolean }>('POST', `/api/reports/${id}/override`, { reason }),
   settings: () => get<Settings>('/api/settings'),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),

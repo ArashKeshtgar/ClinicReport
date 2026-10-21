@@ -27,7 +27,23 @@ public static class ReportEndpoints
         var api = app.MapGroup("/api/reports").WithTags("Reports");
         // Every /{id} route: the report must exist and belong to a service the user may work on;
         // otherwise it answers 404, as if the report were not there.
-        var one = api.MapGroup("/{id:int}").AddEndpointFilter(ServiceAccessFilter);
+        var one = api.MapGroup("/{id:int}").AddEndpointFilter(ServiceAccessFilter).AddEndpointFilter(ConfidentialityFilter);
+
+        // Breaking the glass: outside the filtered group, since the filter is what it opens.
+        api.MapPost("/{id:int}/override", async (int id, OverrideBody body, ClaimsPrincipal user, ClinicReportDbContext db, ConfidentialityGate gate, SecurityLog log) =>
+        {
+            var found = await db.Reports.Where(r => r.Id == id).Select(r => new { r.PatientId, Service = r.TemplateVersion.Template.Service }).SingleOrDefaultAsync();
+            if (found is null || !user.CanAccessService(found.Service))
+                return Results.NotFound();
+            var label = await db.ReportOrders.Where(o => o.ReportId == id).Select(o => o.Confidentiality).FirstOrDefaultAsync();
+            if (label is null)
+                return Results.Ok(new { open = true });   // nothing to open
+            if (!ConfidentialityGate.ReasonOk(body.Reason))
+                return Results.Problem($"Say why, in at least {ConfidentialityGate.MinReason} characters.", statusCode: StatusCodes.Status400BadRequest);
+            var until = gate.Open(user, $"report:{id}");
+            await log.WriteAsync(SecurityEventTypes.RestrictedOverride, user.RequiredUserId(), null, $"{label}: {body.Reason!.Trim()}", id, found.PatientId);
+            return Results.Ok(new { open = true, until });
+        }).RequireAuthorization(Permissions.ReportsView);
 
         api.MapGet("/", async (string? status, DateOnly? from, DateOnly? to, string? q, ClaimsPrincipal user, ClinicReportDbContext db) =>
         {
@@ -118,6 +134,20 @@ public static class ReportEndpoints
                 .Join(db.Users, c => c.UserId, u => u.Id, (c, u) => new ChangeRow(c.At, u.DisplayName, c.Field, c.NewValueJson))
                 .ToListAsync(ct))
             .RequireAuthorization(Permissions.ReportsView);
+    }
+
+    public record OverrideBody(string? Reason);
+
+    /// <summary>A report from a restricted order is closed until the user has broken the glass for it (403 restricted).</summary>
+    private static async ValueTask<object?> ConfidentialityFilter(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
+    {
+        var http = ctx.HttpContext;
+        var id = int.Parse(http.Request.RouteValues["id"]!.ToString()!);
+        var db = http.RequestServices.GetRequiredService<ClinicReportDbContext>();
+        var label = await db.ReportOrders.Where(o => o.ReportId == id).Select(o => o.Confidentiality).FirstOrDefaultAsync();
+        if (label is not null && !http.RequestServices.GetRequiredService<ConfidentialityGate>().IsOpen(http.User, $"report:{id}"))
+            return ConfidentialityGate.Closed(label);
+        return await next(ctx);
     }
 
     private static async ValueTask<object?> ServiceAccessFilter(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)

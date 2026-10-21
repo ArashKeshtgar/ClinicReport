@@ -150,6 +150,11 @@ professional fee (`Diagnostics.Echo` / `Diagnostics.ECG`). The clinic sets the f
 template without fees sends nothing. No patient or findings leave; ClinicReport uses a ClinicHub token with the scope
 `finance`.
 
+**Restricted items.** An order ClinicHub labels (the patient has a consent directive there: `R` restricted, `V` very
+restricted) is closed to everyone until a user says why they need it: starting the exam or opening its report answers `403 restricted` and the screen asks
+for a reason (at least 10 characters), which is logged with the user's name; the access is for that user and lasts one
+hour (it is kept in memory, so a restart closes it). The label goes back on the result. The worklist still lists who was ordered; the reason is in the audit log (`RestrictedOverride`).
+
 **Cancellation.** ClinicHub withdraws an exam by sending its ServiceRequest again with status `revoked`: it leaves the
 worklist if it has not been started; once its report is started the answer is `409`, and the clinic speaks to the
 reading physician.

@@ -273,7 +273,28 @@ public class OrderTests(ConnectedFactory factory) : IClassFixture<ConnectedFacto
         Assert.Equal("R", (string)orders.Single(o => (string)o!["mrn"]! == "HV000912")!["confidentiality"]!);
 
         var order = orders.Single(o => (string)o!["mrn"]! == "HV000911")!;
-        var id = (int)(await Json(await physician.PostAsync($"/api/orders/{(int)order["id"]!}/start", null)))["reportId"]!;
+        var orderId = (int)order["id"]!;
+
+        // Closed until someone says why: starting it is refused, a short reason is refused, a real one opens it for them.
+        var closed = await physician.PostAsync($"/api/orders/{orderId}/start", null);
+        Assert.Equal(HttpStatusCode.Forbidden, closed.StatusCode);
+        var refusal = JsonNode.Parse(await closed.Content.ReadAsStringAsync())!;
+        Assert.Equal("restricted", (string)refusal["code"]!);
+        Assert.Equal("V", (string)refusal["label"]!);
+        Assert.Equal(HttpStatusCode.BadRequest, (await physician.PostAsJsonAsync($"/api/orders/{orderId}/override", new { reason = "short" })).StatusCode);
+        (await physician.PostAsJsonAsync($"/api/orders/{orderId}/override", new { reason = "Reporting the echo ordered for chest pain" })).EnsureSuccessStatusCode();
+        var id = (int)(await Json(await physician.PostAsync($"/api/orders/{orderId}/start", null)))["reportId"]!;
+        Assert.Equal(HttpStatusCode.OK, (await physician.GetAsync($"/api/reports/{id}")).StatusCode);   // the starter carries on
+
+        // Someone else is still shut out of the report, and the override is on the record with its reason.
+        var other = await factory.SignInAsync("27", "dr.glass.second", "harbourview", Physician);
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/reports/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "x" })).StatusCode);
+        await using (var db = factory.Services.GetRequiredService<ClinicReport.Api.Auth.ClinicReportDatabases>().Create("harbourview"))
+            Assert.Contains(db.SecurityEvents.Where(e => e.Type == "RestrictedOverride").ToList(), e => e.Detail!.StartsWith("V: Reporting the echo"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await other.PostAsJsonAsync($"/api/reports/{id}/override", new { reason = "no" })).StatusCode);
+        (await other.PostAsJsonAsync($"/api/reports/{id}/override", new { reason = "Covering the reader for the weekend" })).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, (await other.GetAsync($"/api/reports/{id}")).StatusCode);
         foreach (var section in new[] { "study", "lv", "rv", "mitral", "aortic", "tricuspid", "pericardium" })
             (await physician.PostAsync($"/api/reports/{id}/presets/{section}", null)).EnsureSuccessStatusCode();
         (await physician.PutAsJsonAsync($"/api/reports/{id}/conclusion", new { conclusion = "Normal study." })).EnsureSuccessStatusCode();

@@ -26,6 +26,8 @@ builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SecurityLog>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ConfidentialityGate>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHostedService<DemoResetService>();
 builder.Services.AddSignalR();

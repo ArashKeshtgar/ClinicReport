@@ -143,11 +143,27 @@ public static class OrderEndpoints
         }).RequireAuthorization(Permissions.ReportsView);
 
         // Starting an ordered exam: a draft report on the template, with the order's indication and referring physician.
-        api.MapPost("/{id:int}/start", async (int id, ClaimsPrincipal user, ClinicReportDbContext db, ReportService reports, TimeProvider clock, CancellationToken ct) =>
+        api.MapPost("/{id:int}/override", async (int id, ReportEndpoints.OverrideBody body, ClaimsPrincipal user, ClinicReportDbContext db, ConfidentialityGate gate, SecurityLog log, CancellationToken ct) =>
         {
             var order = await db.ReportOrders.Include(o => o.Template).SingleOrDefaultAsync(o => o.Id == id, ct);
             if (order is null || !user.CanAccessService(order.Template.Service))
                 return Results.NotFound();
+            if (order.Confidentiality is null)
+                return Results.Ok(new { open = true });
+            if (!ConfidentialityGate.ReasonOk(body.Reason))
+                return Results.Problem($"Say why, in at least {ConfidentialityGate.MinReason} characters.", statusCode: StatusCodes.Status400BadRequest);
+            var until = gate.Open(user, $"order:{id}");
+            await log.WriteAsync(SecurityEventTypes.RestrictedOverride, user.RequiredUserId(), null, $"{order.Confidentiality}: {body.Reason!.Trim()}", order.ReportId, order.PatientId);
+            return Results.Ok(new { open = true, until });
+        }).RequireAuthorization(Permissions.ReportsCreate);
+
+        api.MapPost("/{id:int}/start", async (int id, ClaimsPrincipal user, ClinicReportDbContext db, ReportService reports, ConfidentialityGate gate, TimeProvider clock, CancellationToken ct) =>
+        {
+            var order = await db.ReportOrders.Include(o => o.Template).SingleOrDefaultAsync(o => o.Id == id, ct);
+            if (order is null || !user.CanAccessService(order.Template.Service))
+                return Results.NotFound();
+            if (order.Confidentiality is { } label && !gate.IsOpen(user, $"order:{id}"))
+                return ConfidentialityGate.Closed(label);
             if (order.Status != ReportOrderStatus.Waiting)
                 return Results.Problem("This order has already been started.", statusCode: StatusCodes.Status409Conflict);
             var version = await db.TemplateVersions.Where(v => v.TemplateId == order.TemplateId && v.Status == TemplateStatus.Published)
@@ -168,6 +184,8 @@ public static class OrderEndpoints
             order.ReportId = report.Id;
             await db.SaveChangesAsync(ct);
             await reports.SetHeaderAsync(report.Id, new HeaderDto(today, order.Indication, order.ReferringPhysician, null, null), user.RequiredUserId(), null, ct);
+            if (order.Confidentiality is not null)
+                gate.Open(user, $"report:{report.Id}");   // the person who opened the order carries on with its report
             return Results.Ok(new { reportId = report.Id });
         }).RequireAuthorization(Permissions.ReportsCreate);
     }

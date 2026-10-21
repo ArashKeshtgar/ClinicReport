@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ageOn, api, ApiError, can, formatDateTime, type Change, type Header, type Report } from '../api'
+import { ageOn, api, ApiError, can, formatDateTime, isRestricted, type Change, type Header, type Report } from '../api'
 import { useSession } from '../App'
 import { FieldInput, isNumberText, type FieldContext } from '../components/FieldInput'
+import { RestrictedGate } from '../components/RestrictedGate'
 import { ReportView } from '../components/ReportView'
 import { useReportLive } from '../live'
 import { allFields, visibleFields, type FieldDef, type Value, type Values } from '../template'
@@ -44,8 +45,12 @@ export default function ReportEditor() {
     if (conclusionEdits.current === 0) setConclusion(r.conclusion ?? '')
   }, [])
 
+  const [restricted, setRestricted] = useState<string | null>(null)   // the label, while the report is closed
   const reload = useCallback(() => {
-    api.report(id).then(accept).catch(e => setError(e.message))
+    api.report(id).then(r => { setRestricted(null); accept(r) }).catch(e => {
+      if (isRestricted(e)) setRestricted(String(e.data.label ?? 'R'))
+      else setError(e.message)
+    })
   }, [id, accept])
 
   useEffect(() => {
@@ -142,6 +147,7 @@ export default function ReportEditor() {
     () => report ? visibleFields(report.definition, values, report.rendered.computed) : new Set<string>(),
     [report, values])
 
+  if (restricted && !report) return <RestrictedGate label={restricted} onOpen={async reason => { await api.overrideReport(id, reason); reload() }} />
   if (error && !report) return <p className="error">{error}</p>
   if (!report) return <p className="muted">Loading…</p>
 

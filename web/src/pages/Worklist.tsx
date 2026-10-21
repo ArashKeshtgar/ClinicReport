@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { api, can, formatDateTime, type OrderRow, type WorklistRow } from '../api'
+import { api, can, formatDateTime, isRestricted, type OrderRow, type WorklistRow } from '../api'
 import { useSession } from '../App'
 
 export default function Worklist() {
@@ -113,7 +113,16 @@ function Ordered() {
                 <td className="small">{o.referringPhysician}</td>
                 <td>{can(me, 'reports.create') && (
                   <button className="primary" onClick={async () => {
-                    try { navigate(`/reports/${(await api.startOrder(o.id)).reportId}`) } catch (e) { setError(e instanceof Error ? e.message : 'Not started.') }
+                    try {
+                      try { navigate(`/reports/${(await api.startOrder(o.id)).reportId}`) }
+                      catch (e) {
+                        if (!isRestricted(e)) throw e
+                        const reason = window.prompt('The patient has a consent directive at the clinic. Why do you need to open this exam? It is logged with your name.')
+                        if (!reason) return
+                        await api.overrideOrder(o.id, reason)
+                        navigate(`/reports/${(await api.startOrder(o.id)).reportId}`)
+                      }
+                    } catch (e) { setError(e instanceof Error ? e.message : 'Not started.') }
                   }}>Start report</button>
                 )}</td>
               </tr>

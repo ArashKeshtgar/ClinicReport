@@ -89,6 +89,8 @@ public class UserRole
 
 public static class SecurityEventTypes
 {
+    /// <summary>Someone opened a restricted item (a patient's consent directive) with a reason: who, what, why.</summary>
+    public const string RestrictedOverride = "RestrictedOverride";
     public const string LoginSucceeded = "LoginSucceeded";
     public const string LoginFailed = "LoginFailed";
     public const string LockedOut = "LockedOut";
