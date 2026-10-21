@@ -135,7 +135,14 @@ in. A resent order is recognised; an unknown exam is refused with an OperationOu
 **Results back.** Signing a report from an order sends it to ClinicHub as a FHIR DiagnosticReport (`final`, the
 conclusion, and a link to the full report at `ClinicHub:PublicUrl`); an addendum sends it again as `amended`. Messages
 wait in the clinic database's outbox until ClinicHub accepts them; ClinicReport authenticates with its own client id
-and secret (client credentials, scope `results`).
+and secret (client credentials, scope `results`). They go to ClinicHub's own `/fhir` unless `ClinicHub:ResultsUrl`
+names another address, such as IntegrationHub's `http://localhost:5700/route/clinichub/fhir` (the hub forwards
+ClinicReport's ClinicHub token unchanged; the token itself is still asked of ClinicHub).
+
+**Through IntegrationHub.** `dotnet run --launch-profile via-hub` is the `connected` profile with the results
+(`ClinicHub:ResultsUrl`) and the accounting (`ClinicHub:FinanceUrl=http://localhost:5700/route/finance`) sent through
+IntegrationHub on :5700. To switch back, run `connected` again (or empty `ResultsUrl` and set `FinanceUrl` to
+`http://localhost:5400`). Orders come through the hub when ClinicHub's own `via-hub` profile is used; nothing changes here.
 
 **To the accounting.** With `ClinicHub:FinanceUrl` set (FinancePowerApp, the group's accounting), each signed report
 of an ordered exam is sent there as a receivable from OHIP: the template's technical fee (`OHIP.Technical`) and

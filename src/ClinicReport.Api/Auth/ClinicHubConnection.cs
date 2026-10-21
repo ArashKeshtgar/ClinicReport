@@ -44,6 +44,15 @@ public class ClinicHubOptions
     /// <summary>FinancePowerApp's address (the group's accounting). Empty: nothing is sent there.</summary>
     public string? FinanceUrl { get; set; }
 
+    /// <summary>
+    /// Where signed results are POSTed. Empty: ClinicHub's own /fhir ({Authority}fhir). To send them through
+    /// IntegrationHub, its clinichub route, e.g. http://localhost:5700/route/clinichub/fhir; the token is still ClinicHub's.
+    /// </summary>
+    public string? ResultsUrl { get; set; }
+
+    public Uri ResultsEndpoint() =>
+        string.IsNullOrWhiteSpace(ResultsUrl) ? new Uri(new Uri(Authority!), "fhir") : new Uri(ResultsUrl);
+
     public bool Enabled => !string.IsNullOrWhiteSpace(Authority);
 }
 
