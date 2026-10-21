@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api, can, formatDateTime, isRestricted, type OrderRow, type WorklistRow } from '../api'
 import { useSession } from '../App'
+import { RestrictedGate } from '../components/RestrictedGate'
 
 export default function Worklist() {
   const [rows, setRows] = useState<WorklistRow[] | null>(null)
@@ -80,6 +81,8 @@ function Ordered() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState<OrderRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** A restricted order the user tried to start: the gate asks why, then opens it and starts the report. */
+  const [closed, setClosed] = useState<OrderRow | null>(null)
 
   useEffect(() => {
     const load = () => api.orders().then(setOrders).catch(e => setError(e.message))
@@ -117,10 +120,7 @@ function Ordered() {
                       try { navigate(`/reports/${(await api.startOrder(o.id)).reportId}`) }
                       catch (e) {
                         if (!isRestricted(e)) throw e
-                        const reason = window.prompt('The patient has a consent directive at the clinic. Why do you need to open this exam? It is logged with your name.')
-                        if (!reason) return
-                        await api.overrideOrder(o.id, reason)
-                        navigate(`/reports/${(await api.startOrder(o.id)).reportId}`)
+                        setClosed(o)
                       }
                     } catch (e) { setError(e instanceof Error ? e.message : 'Not started.') }
                   }}>Start report</button>
@@ -130,6 +130,16 @@ function Ordered() {
           </tbody>
         </table>
       </div>
+      {closed && (
+        <RestrictedGate
+          label={closed.confidentiality ?? 'R'}
+          action="Open this exam and start the report"
+          onOpen={async reason => {
+            await api.overrideOrder(closed.id, reason)
+            navigate(`/reports/${(await api.startOrder(closed.id)).reportId}`)
+          }}
+        />
+      )}
     </section>
   )
 }
