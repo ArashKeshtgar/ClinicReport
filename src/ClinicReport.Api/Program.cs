@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+// Secrets as files, one per setting (e.g. ConnectionStrings__Finance), the way Docker mounts them; none outside a container.
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 
 var connectionString = builder.Configuration.GetConnectionString("ClinicReport") ?? "Data Source=clinicreport.db";
 builder.Services.AddDbContext<ClinicReportDbContext>(o => o.UseSqlite(connectionString));
