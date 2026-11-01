@@ -53,10 +53,12 @@ builder.Services.AddRateLimiter(o =>
 var app = builder.Build();
 
 // Standalone: one database, prepared now. Connected to ClinicHub: one database per clinic, prepared at its first sign-in.
+// Hosted: the catalog now, each tenant's database at its first request.
 var connected = app.Services.IsConnected();
-if (app.Services.IsHosted())
+var hosted = app.Services.IsHosted();
+if (hosted)
     await CatalogSetup.MigrateCatalogAsync(app.Services);
-if (!connected)
+if (!connected && !hosted)
     using (var scope = app.Services.CreateScope())
         await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
 
@@ -75,15 +77,20 @@ app.UsePendingActionGate();
 app.UseAuthorization();
 app.UseCsrfHeaderCheck();
 
-app.MapGet("/api/settings", (IOptions<ClinicOptions> clinic, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub) => new
+app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub) =>
 {
-    clinic.Value.Name, clinic.Value.Address, clinic.Value.Phone, clinic.Value.ReportFooter,
-    Demo = demo.Value.Enabled && !hub.Value.Enabled,
-    AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,
-    DemoUsers = demo.Value.Enabled && !hub.Value.Enabled ? DemoSeeder.DemoUserNames : [],
-    // "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles.
-    SignIn = hub.Value.Enabled ? "clinichub" : "local",
-    ClinicHubUrl = hub.Value.Enabled ? hub.Value.Authority : null,
+    // Hosted: the tenant of the host. Otherwise the "Clinic" settings.
+    var clinic = http.CurrentClinic();
+    return new
+    {
+        clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,
+        Demo = demo.Value.Enabled && !hub.Value.Enabled,
+        AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,
+        DemoUsers = demo.Value.Enabled && !hub.Value.Enabled ? DemoSeeder.DemoUserNames : [],
+        // "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles.
+        SignIn = hub.Value.Enabled ? "clinichub" : "local",
+        ClinicHubUrl = hub.Value.Enabled ? hub.Value.Authority : null,
+    };
 }).AllowAnonymous();
 
 app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();

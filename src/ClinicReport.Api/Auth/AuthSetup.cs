@@ -90,6 +90,14 @@ public static class AuthSetup
     /// </summary>
     private static async Task LoadCurrentAccess(CookieValidatePrincipalContext ctx)
     {
+        // Hosted: a session from another tenant's subdomain is refused before this tenant's users are looked at,
+        // since the same user Id exists in every tenant's database.
+        if (ctx.HttpContext.RequestServices.IsHosted()
+            && ctx.Principal?.FindFirstValue(ClinicHubClaims.Clinic) != ctx.HttpContext.RequestServices.GetRequiredService<ITenantContext>().Tenant?.Slug)
+        {
+            ctx.RejectPrincipal();
+            return;
+        }
         var id = ctx.Principal?.UserId();
         var stamp = ctx.Principal?.FindFirstValue(AppClaims.Stamp);
         // A local session presented to a connected installation has no database to check against.

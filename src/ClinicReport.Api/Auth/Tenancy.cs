@@ -38,6 +38,19 @@ public static class Tenancy
         return ClinicReportDatabases.IsValidSlug(slug) ? slug : null;
     }
 
+    /// <summary>The clinic's name and letterhead: the tenant's in Hosted mode, otherwise the "Clinic" settings.</summary>
+    public static ClinicOptions CurrentClinic(this HttpContext http)
+    {
+        var configured = http.RequestServices.GetRequiredService<IOptions<ClinicOptions>>().Value;
+        if (http.RequestServices.GetService<ITenantContext>()?.Tenant is not { } tenant)
+            return configured;
+        return new ClinicOptions
+        {
+            Name = tenant.Name, Address = tenant.Settings?.Address, Phone = tenant.Settings?.Phone,
+            ReportFooter = tenant.Settings?.ReportFooter,
+        };
+    }
+
     /// <summary>
     /// Before authentication: an unknown or cancelled tenant gets 404 for everything but /healthz, so a guessed
     /// subdomain learns nothing. The sign-in cookie needs no Domain: without one it is sent to its own host only.
@@ -63,6 +76,8 @@ public static class Tenancy
                 return;
             }
             ctx.RequestServices.GetRequiredService<TenantContext>().Tenant = tenant;
+            // Prepared here, where it can be awaited; the scoped DbContext then opens it without waiting.
+            await (await ctx.RequestServices.GetRequiredService<ClinicReportDatabases>().OpenAsync(tenant.Slug)).DisposeAsync();
             await next();
         });
     }

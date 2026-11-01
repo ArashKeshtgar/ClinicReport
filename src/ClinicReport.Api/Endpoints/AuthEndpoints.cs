@@ -192,7 +192,7 @@ public static class AuthEndpoints
         }).RequireRateLimiting(LoginRateLimit);
 
         account.MapPost("/two-factor/setup", async (ClaimsPrincipal principal, ClinicReportDbContext db,
-            IDataProtectionProvider protection, IOptions<ClinicOptions> clinic) =>
+            IDataProtectionProvider protection, HttpContext http) =>
         {
             var user = (await LoadUser(db, principal.RequiredUserId(), tracked: true))!;
             if (user.TwoFactorEnabled)
@@ -200,7 +200,7 @@ public static class AuthEndpoints
             var secret = Totp.NewSecret();
             user.TwoFactorSecret = protection.CreateProtector(TwoFactorPurpose).Protect(secret);
             await db.SaveChangesAsync();
-            return Results.Ok(new TwoFactorSetup(secret, Totp.OtpAuthUri(clinic.Value.Name, user.UserName, secret)));
+            return Results.Ok(new TwoFactorSetup(secret, Totp.OtpAuthUri(http.CurrentClinic().Name, user.UserName, secret)));
         });
 
         account.MapPost("/two-factor/enable", async (CodeBody body, ClaimsPrincipal principal, ClinicReportDbContext db,

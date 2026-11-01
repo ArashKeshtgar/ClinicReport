@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using ClinicReport.Api.Auth;
@@ -5,7 +6,9 @@ using ClinicReport.Api.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClinicReport.Tests;
@@ -15,21 +18,28 @@ public class HostedFactory : ApiFactory
 {
     public const string BaseDomain = "clinicreport.test";
 
-    private readonly string _catalogPath = Path.Combine(Path.GetTempPath(), $"clinicreport-catalog-{Guid.NewGuid():N}.db");
+    private readonly string _dir = Directory.CreateTempSubdirectory("clinicreport-hosted-").FullName;
+
+    public string DatabaseOf(string slug) => Path.Combine(_dir, $"clinicreport-{slug}.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
         builder.UseSetting("Hosting:Mode", "Hosted");
         builder.UseSetting("Hosting:BaseDomain", BaseDomain);
-        builder.UseSetting("Hosting:CatalogConnection", $"Data Source={_catalogPath}");
+        builder.UseSetting("Hosting:CatalogConnection", $"Data Source={Path.Combine(_dir, "catalog.db")}");
+        builder.UseSetting("Hosting:DatabasePattern", $"Data Source={Path.Combine(_dir, "clinicreport-{clinic}.db")}");
     }
 
     public async Task AddTenantAsync(string slug, string status = TenantStatus.Active)
     {
         using var scope = Services.CreateScope();
         var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        catalog.Tenants.Add(new Tenant { Slug = slug, Name = $"Clinic {slug}", Status = status, CreatedAt = DateTime.UtcNow });
+        catalog.Tenants.Add(new Tenant
+        {
+            Slug = slug, Name = $"Clinic {slug}", Status = status, CreatedAt = DateTime.UtcNow,
+            Settings = new TenantSettings { Address = $"1 {slug} Road", ReportFooter = $"Footer of {slug}" },
+        });
         await catalog.SaveChangesAsync();
     }
 
@@ -58,7 +68,32 @@ public class HostedFactory : ApiFactory
     {
         await base.DisposeAsync();
         SqliteConnection.ClearAllPools();
-        File.Delete(_catalogPath);
+        Directory.Delete(_dir, recursive: true);
+    }
+}
+
+/// <summary>Records which database file each query ran against.</summary>
+public sealed class QueryRecorder : DbCommandInterceptor
+{
+    public List<(string Database, string Sql)> Queries { get; } = [];
+
+    private void Record(DbCommand command)
+    {
+        lock (Queries)
+            Queries.Add((command.Connection!.DataSource, command.CommandText));
+    }
+
+    public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+    {
+        Record(command);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
+        InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+    {
+        Record(command);
+        return ValueTask.FromResult(result);
     }
 }
 
@@ -128,7 +163,8 @@ public class HostedTests : IAsyncLifetime
         south.DefaultRequestHeaders.Add("Cookie", northCookie);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await south.GetAsync("/api/patients")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await south.GetAsync("/api/auth/me")).StatusCode);
+        // Not signed in there: "me" has no one to report.
+        Assert.Equal(HttpStatusCode.NoContent, (await south.GetAsync("/api/auth/me")).StatusCode);
     }
 
     [Fact]
@@ -151,6 +187,55 @@ public class HostedTests : IAsyncLifetime
         var (north, _) = await _factory.SignInAtAsync("north");
         Assert.Equal(HttpStatusCode.Created, (await north.PostAsJsonAsync("/api/patients", NewPatient("T-ACT-1"))).StatusCode);
     }
+
+    [Fact]
+    public async Task Settings_are_the_tenants_own()
+    {
+        var north = await _factory.ClientFor("north").GetFromJsonAsync<Settings>("/api/settings");
+        var south = await _factory.ClientFor("south").GetFromJsonAsync<Settings>("/api/settings");
+        Assert.Equal(new Settings("Clinic north", "1 north Road", "Footer of north"), north);
+        Assert.Equal(new Settings("Clinic south", "1 south Road", "Footer of south"), south);
+    }
+
+    [Fact]
+    public async Task Each_tenant_has_its_own_database()
+    {
+        var (north, _) = await _factory.SignInAtAsync("north");
+        var (south, _) = await _factory.SignInAtAsync("south");
+        var created = await north.PostAsJsonAsync("/api/patients", NewPatient("T-ISO-1"));
+        var id = (await created.Content.ReadFromJsonAsync<Patient>())!.Id;
+
+        Assert.True(File.Exists(_factory.DatabaseOf("north")));
+        Assert.True(File.Exists(_factory.DatabaseOf("south")));
+        Assert.Contains((await north.GetFromJsonAsync<Patient[]>("/api/patients?q=T-ISO-1"))!, p => p.Mrn == "T-ISO-1");
+        Assert.Empty((await south.GetFromJsonAsync<Patient[]>("/api/patients?q=T-ISO-1"))!);
+        // The same Id at south is south's own row, or nothing.
+        var res = await south.GetAsync($"/api/patients/{id}");
+        Assert.True(res.StatusCode == HttpStatusCode.NotFound || (await res.Content.ReadFromJsonAsync<Patient>())!.Mrn != "T-ISO-1");
+    }
+
+    [Fact]
+    public async Task A_session_from_another_tenant_never_reads_this_tenants_users()
+    {
+        var recorder = new QueryRecorder();
+        var factory = _factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<IInterceptor>(recorder)));
+        var signIn = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri($"http://north.{HostedFactory.BaseDomain}") });
+        signIn.DefaultRequestHeaders.Add(AuthSetup.CsrfHeader, "1");
+        var login = await signIn.PostAsJsonAsync("/api/auth/demo-login", new { userName = "demo.admin" });
+        var northCookie = login.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("clinicreport.auth=")).Split(';')[0];
+
+        var south = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri($"http://south.{HostedFactory.BaseDomain}") });
+        await south.GetAsync("/api/settings");   // south's database is prepared (and seeded) here
+        lock (recorder.Queries) recorder.Queries.Clear();
+
+        south.DefaultRequestHeaders.Add("Cookie", northCookie);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await south.GetAsync("/api/patients")).StatusCode);
+        Assert.DoesNotContain(recorder.Queries, q => q.Database == _factory.DatabaseOf("south") && q.Sql.Contains("\"Users\""));
+    }
+
+    private record Settings(string Name, string? Address, string? ReportFooter);
+
+    private record Patient(int Id, string Mrn);
 
     private static object NewPatient(string mrn) =>
         new { mrn, firstName = "Test", lastName = "Person", dateOfBirth = "1980-01-01", sex = "U" };

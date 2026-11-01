@@ -40,8 +40,8 @@ public sealed class DemoResetService(IServiceProvider services, IOptions<DemoOpt
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Connected installations have a database per clinic and no demo reset.
-        if (!demo.Value.Enabled || services.IsConnected() || demo.Value.ResetHourUtc is not { } hour || hour is < 0 or > 23)
+        // Connected and hosted installations have a database per clinic and no demo reset.
+        if (!demo.Value.Enabled || services.IsConnected() || services.IsHosted() || demo.Value.ResetHourUtc is not { } hour || hour is < 0 or > 23)
             return;
 
         while (!stoppingToken.IsCancellationRequested)

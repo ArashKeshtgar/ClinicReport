@@ -21,6 +21,9 @@ public class HostingOptions
     /// <summary>Each tenant is a subdomain of this, e.g. "clinicreport.example.com" for north.clinicreport.example.com.</summary>
     public string? BaseDomain { get; set; }
 
+    /// <summary>Where each tenant's own database is, "{clinic}" being its slug.</summary>
+    public string DatabasePattern { get; set; } = "Data Source=clinicreport-{clinic}.db";
+
     public bool Hosted => string.Equals(Mode, HostedMode, StringComparison.OrdinalIgnoreCase);
 }
 
@@ -117,6 +120,10 @@ public static class CatalogSetup
             throw new InvalidOperationException("Hosted mode signs people in locally; leave ClinicHub:Authority empty.");
         services.AddDbContext<CatalogDbContext>(o => o.UseSqlite(hosting.CatalogConnection));
         services.AddTenancy();
+        // The database of the request is the tenant of its host, prepared by the tenant middleware.
+        services.AddSingleton<ClinicReportDatabases>();
+        services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(
+            sp.GetRequiredService<ITenantContext>().Tenant?.Slug ?? throw new InvalidOperationException("No tenant for this request.")));
         return true;
     }
 

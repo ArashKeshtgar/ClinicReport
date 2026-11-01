@@ -6,7 +6,9 @@ using ClinicReport.Api.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
@@ -66,8 +68,11 @@ public static class ClinicHubClaims
     public const string CheckedAt = "checked_at";
 }
 
-/// <summary>Opens a clinic's own database, creating and preparing it (migrations, roles, bundled templates) the first time.</summary>
-public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IServiceProvider services)
+/// <summary>
+/// Opens a clinic's own database, creating and preparing it (migrations, roles, bundled templates) the first time.
+/// Used by connected mode (the clinic from ClinicHub's sign-in) and Hosted mode (the tenant from the host name).
+/// </summary>
+public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<HostingOptions> hosting, IServiceProvider services)
 {
     private readonly ConcurrentDictionary<string, Lazy<Task>> _ready = new();
 
@@ -78,8 +83,10 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IServiceP
     {
         if (!IsValidSlug(slug))
             throw new InvalidOperationException("Invalid clinic name.");
-        var cs = options.Value.DatabasePattern.Replace("{clinic}", slug);
-        return new ClinicReportDbContext(new DbContextOptionsBuilder<ClinicReportDbContext>().UseSqlite(cs).Options);
+        var pattern = hosting.Value.Hosted ? hosting.Value.DatabasePattern : options.Value.DatabasePattern;
+        var cs = pattern.Replace("{clinic}", slug);
+        return new ClinicReportDbContext(new DbContextOptionsBuilder<ClinicReportDbContext>().UseSqlite(cs)
+            .AddInterceptors(services.GetServices<IInterceptor>()).Options);
     }
 
     public async Task<ClinicReportDbContext> OpenAsync(string slug)
@@ -98,6 +105,9 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IServiceP
         await RoleSeeder.SeedAsync(db);
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("ClinicHub");
         await TemplateSeeder.SeedAsync(db, Path.Combine(AppContext.BaseDirectory, "templates"), logger, DateTime.UtcNow);
+        // A hosted demo gives every tenant the same demo staff and patients, each in its own database.
+        if (hosting.Value.Hosted && services.GetRequiredService<IOptions<DemoOptions>>().Value.Enabled)
+            await DemoSeeder.SeedAsync(db, services.GetRequiredService<IPasswordHasher<AppUser>>(), DateTime.UtcNow);
     }
 }
 
