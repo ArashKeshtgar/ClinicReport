@@ -15,6 +15,8 @@ builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 
 var connectionString = builder.Configuration.GetConnectionString("ClinicReport") ?? "Data Source=clinicreport.db";
 builder.Services.AddDbContext<ClinicReportDbContext>(o => o.UseSqlite(connectionString));
+// Hosted (multi-tenant) mode: the tenant registry, a database of its own.
+builder.Services.AddTenantCatalog(builder.Configuration);
 
 // Keys that encrypt the sign-in cookie. In the container they live in the data volume, so a redeploy
 // doesn't sign everyone out.
@@ -52,6 +54,8 @@ var app = builder.Build();
 
 // Standalone: one database, prepared now. Connected to ClinicHub: one database per clinic, prepared at its first sign-in.
 var connected = app.Services.IsConnected();
+if (app.Services.IsHosted())
+    await CatalogSetup.MigrateCatalogAsync(app.Services);
 if (!connected)
     using (var scope = app.Services.CreateScope())
         await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
