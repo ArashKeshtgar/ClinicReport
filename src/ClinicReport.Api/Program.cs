@@ -62,6 +62,15 @@ if (!connected && !hosted)
     using (var scope = app.Services.CreateScope())
         await DatabaseInitializer.RunAsync(scope.ServiceProvider, wipe: false);
 
+// "--migrate-all" (Hosted): every tenant's database brought up to date, then exit; exit code 1 if any failed.
+if (args.Contains(TenantMigration.Command))
+{
+    if (!hosted)
+        throw new InvalidOperationException($"{TenantMigration.Command} is for Hosted mode.");
+    Environment.ExitCode = await TenantMigration.MigrateAllAsync(app.Services) == 0 ? 0 : 1;
+    return;
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseTenantResolution();

@@ -84,7 +84,7 @@ public class ResultSender(ClinicReportDatabases databases, IOptions<ClinicHubOpt
     private string? _token;
     private DateTime _tokenExpires;
 
-    /// <summary>Clinics with a database here: the files the database pattern matches.</summary>
+    /// <summary>Connected mode: clinics with a database here, the files the database pattern matches.</summary>
     public IEnumerable<string> Clinics()
     {
         var path = new SqliteConnectionStringBuilder(options.Value.DatabasePattern).DataSource;

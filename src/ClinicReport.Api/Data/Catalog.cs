@@ -124,6 +124,8 @@ public static class CatalogSetup
         services.AddSingleton<ClinicReportDatabases>();
         services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(
             sp.GetRequiredService<ITenantContext>().Tenant?.Slug ?? throw new InvalidOperationException("No tenant for this request.")));
+        // No result or finance senders here: both send with ClinicHub's client credentials, and hosted orders don't come
+        // from ClinicHub. A background job over tenants lists them from the catalog (Trial, Active, PastDue), not from files.
         return true;
     }
 
