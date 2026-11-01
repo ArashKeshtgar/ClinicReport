@@ -62,6 +62,7 @@ if (!connected)
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseTenantResolution();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 if (app.Environment.IsDevelopment())
@@ -69,6 +70,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseTenantGate();
 app.UsePendingActionGate();
 app.UseAuthorization();
 app.UseCsrfHeaderCheck();

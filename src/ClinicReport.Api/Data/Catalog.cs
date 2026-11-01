@@ -1,3 +1,4 @@
+using ClinicReport.Api.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,9 @@ public class HostingOptions
 
     /// <summary>The tenant registry. Holds no health information, only who the tenants are and their plan.</summary>
     public string CatalogConnection { get; set; } = "Data Source=catalog.db";
+
+    /// <summary>Each tenant is a subdomain of this, e.g. "clinicreport.example.com" for north.clinicreport.example.com.</summary>
+    public string? BaseDomain { get; set; }
 
     public bool Hosted => string.Equals(Mode, HostedMode, StringComparison.OrdinalIgnoreCase);
 }
@@ -106,7 +110,13 @@ public static class CatalogSetup
         var hosting = config.GetSection("Hosting").Get<HostingOptions>() ?? new HostingOptions();
         if (!hosting.Hosted)
             return false;
+        if (string.IsNullOrWhiteSpace(hosting.BaseDomain))
+            throw new InvalidOperationException("Hosted mode needs Hosting:BaseDomain.");
+        // Hosted clinics sign in here, each at its own subdomain; ClinicHub's sign-in is for the clinic group's own installation.
+        if (config.GetSection("ClinicHub").Get<ClinicHubOptions>()?.Enabled == true)
+            throw new InvalidOperationException("Hosted mode signs people in locally; leave ClinicHub:Authority empty.");
         services.AddDbContext<CatalogDbContext>(o => o.UseSqlite(hosting.CatalogConnection));
+        services.AddTenancy();
         return true;
     }
 

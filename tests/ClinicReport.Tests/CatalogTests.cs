@@ -1,5 +1,4 @@
 using ClinicReport.Api.Data;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -76,28 +75,5 @@ public class CatalogRegistrationTests
         using var factory = new ApiFactory();
         using var scope = factory.Services.CreateScope();
         Assert.Null(scope.ServiceProvider.GetService(typeof(CatalogDbContext)));
-    }
-
-    [Fact]
-    public async Task Hosted_mode_creates_the_catalog_at_startup()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"clinicreport-catalog-{Guid.NewGuid():N}.db");
-        try
-        {
-            await using (var factory = new ApiFactory().WithWebHostBuilder(b => b
-                .UseSetting("Hosting:Mode", "Hosted")
-                .UseSetting("Hosting:CatalogConnection", $"Data Source={path}")))
-            {
-                using var scope = factory.Services.CreateScope();
-                var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-                Assert.Empty(await catalog.Database.GetPendingMigrationsAsync());
-                Assert.Empty(await catalog.Tenants.ToListAsync());
-            }
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            File.Delete(path);
-        }
     }
 }

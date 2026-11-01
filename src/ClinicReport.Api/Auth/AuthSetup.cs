@@ -64,7 +64,9 @@ public static class AuthSetup
                 // An API answers 401/403; it never redirects to a login page.
                 o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
                 o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
-                o.Events.OnValidatePrincipal = ctx => ctx.Principal?.HasClaim(c => c.Type == ClinicHubClaims.Clinic) == true
+                // Hosted sessions also name their clinic, but they are local accounts of that tenant.
+                o.Events.OnValidatePrincipal = ctx => !ctx.HttpContext.RequestServices.IsHosted()
+                    && ctx.Principal?.HasClaim(c => c.Type == ClinicHubClaims.Clinic) == true
                     ? ClinicHubConnection.ValidateAsync(ctx)
                     : LoadCurrentAccess(ctx);
             });
@@ -107,10 +109,12 @@ public static class AuthSetup
             await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return;
         }
-        ctx.ReplacePrincipal(CreatePrincipal(user, Access.For(user)));
+        // The clinic claim is kept as it came, so the tenant gate can refuse a session from another subdomain.
+        ctx.ReplacePrincipal(CreatePrincipal(user, Access.For(user), ctx.Principal!.FindFirstValue(ClinicHubClaims.Clinic)));
     }
 
-    public static ClaimsPrincipal CreatePrincipal(AppUser user, Access? access = null)
+    /// <param name="clinic">Hosted mode: the tenant the session was signed in at.</param>
+    public static ClaimsPrincipal CreatePrincipal(AppUser user, Access? access = null, string? clinic = null)
     {
         var claims = new List<Claim>
         {
@@ -118,6 +122,8 @@ public static class AuthSetup
             new(ClaimTypes.Name, user.DisplayName),
             new(AppClaims.Stamp, user.SecurityStamp),
         };
+        if (clinic is not null)
+            claims.Add(new Claim(ClinicHubClaims.Clinic, clinic));
         if (access is not null)
         {
             claims.AddRange(access.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
@@ -133,7 +139,8 @@ public static class AuthSetup
     }
 
     public static Task SignInAsync(HttpContext http, AppUser user) =>
-        http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, CreatePrincipal(user));
+        http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+            CreatePrincipal(user, clinic: http.RequestServices.GetService<ITenantContext>()?.Tenant?.Slug));
 
     public static int? UserId(this ClaimsPrincipal user) =>
         int.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
