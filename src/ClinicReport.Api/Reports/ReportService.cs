@@ -33,7 +33,7 @@ public class ReportRuleException(string message, int status = StatusCodes.Status
 /// changed what, saves with optimistic concurrency (two people typing at once never lose each other's
 /// fields), and pushes the new state to everyone who has the report open.
 /// </summary>
-public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub)
+public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub, IHttpContextAccessor http)
 {
     private const int MaxTextLength = 4000;
     private const int MaxSaveAttempts = 5;
@@ -241,7 +241,7 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
     }
 
     private Task BroadcastAsync(ReportDto dto, string? clientId, CancellationToken ct) =>
-        hub.Clients.Group(ReportHub.GroupName(dto.Id)).SendAsync("reportChanged", new { clientId, report = dto }, ct);
+        hub.Clients.Group(ReportHub.GroupName(new ReportRoom(ReportHub.ClinicOf(http.HttpContext?.User), dto.Id))).SendAsync("reportChanged", new { clientId, report = dto }, ct);
 
     /// <summary>Checks a value fits its field and returns it in canonical form (numbers as numbers).</summary>
     public static JsonElement? Normalize(FieldDef field, JsonElement? value)
