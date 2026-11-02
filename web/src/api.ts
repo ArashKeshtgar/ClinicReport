@@ -26,7 +26,13 @@ export type Settings = {
   signup?: boolean; baseDomain?: string | null
   /** Hosted: signed up, but the owner has not confirmed the email yet; no reports can be started. */
   awaitingEmailVerification?: boolean
+  /** The multi-tenant service: the clinic's letterhead is edited here, and new clinics get an onboarding checklist. */
+  hosted?: boolean
 }
+
+export type OnboardingStep = { key: 'email' | 'letterhead' | 'template' | 'invite' | 'report'; title: string; done: boolean }
+export type Onboarding = { steps: OnboardingStep[]; complete: boolean }
+export type ClinicLetterhead = { name: string; address: string | null; phone: string | null; reportFooter: string | null }
 
 export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
 export type SignupResult = { slug: string; url: string; trialEndsAt: string; emailSent: boolean }
@@ -159,6 +165,8 @@ export const api = {
   checkSlug: (value: string) => get<SlugCheck>(`/api/signup/slug?value=${encodeURIComponent(value)}`),
   signup: (body: SignupRequest) => request<SignupResult>('POST', '/api/signup', body),
   verifyEmail: (token: string) => request<{ verified: boolean }>('POST', '/api/auth/verify-email', { token }),
+  onboarding: () => get<Onboarding>('/api/clinic/onboarding'),
+  saveClinic: (body: ClinicLetterhead) => request<void>('PUT', '/api/clinic', body),
   resendVerification: () => request<{ sent: boolean; verified: boolean }>('POST', '/api/auth/verify-email/resend'),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),

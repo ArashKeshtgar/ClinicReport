@@ -4,6 +4,7 @@ import { api, can, type Me, type Settings } from './api'
 import Login, { ClinicHubSignIn } from './pages/Login'
 import Signup from './pages/Signup'
 import VerifyEmail, { VerifyEmailBanner } from './pages/VerifyEmail'
+import Clinic from './pages/Clinic'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -17,7 +18,7 @@ import PendingActionPage from './pages/PendingAction'
 import { Logo } from './components/Logo'
 import { applyTheme, savedTheme, type Theme } from './theme'
 
-type Session = { me: Me; settings: Settings; signOut: () => Promise<void>; refreshMe: (me: Me) => void }
+type Session = { me: Me; settings: Settings; signOut: () => Promise<void>; refreshMe: (me: Me) => void; refreshSettings: () => Promise<void> }
 const SessionContext = createContext<Session | null>(null)
 
 export function useSession(): Session {
@@ -66,7 +67,7 @@ export default function App() {
 
   const printing = location.pathname.endsWith('/print')
   return (
-    <SessionContext.Provider value={{ me, settings, signOut, refreshMe: setMe }}>
+    <SessionContext.Provider value={{ me, settings, signOut, refreshMe: setMe, refreshSettings: () => api.settings().then(setSettings) }}>
       {!printing && <TopBar />}
       {!printing && settings.demo && (
         <div className="demo-banner" role="note">
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/users" element={can(me, 'users.manage') ? <Users /> : <Navigate to="/" />} />
           <Route path="/audit" element={can(me, 'audit.view') ? <Audit /> : <Navigate to="/" />} />
           <Route path="/account" element={<Account />} />
+          <Route path="/clinic" element={settings.hosted && can(me, 'users.manage') ? <Clinic /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -107,6 +109,7 @@ function TopBar() {
         <NavLink to="/templates">Templates</NavLink>
         {can(me, 'users.manage') && <NavLink to="/users">{settings.signIn === 'clinichub' ? 'Users' : <>Users &amp; roles</>}</NavLink>}
         {can(me, 'audit.view') && <NavLink to="/audit">Audit log</NavLink>}
+        {settings.hosted && can(me, 'users.manage') && <NavLink to="/clinic">Clinic</NavLink>}
       </nav>
       <div className="who">
         <ThemeToggle />

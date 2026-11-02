@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { api, can, formatDateTime, isRestricted, type OrderRow, type WorklistRow } from '../api'
 import { useSession } from '../App'
 import { RestrictedGate } from '../components/RestrictedGate'
+import { OnboardingChecklist } from './Clinic'
 
 export default function Worklist() {
   const [rows, setRows] = useState<WorklistRow[] | null>(null)
@@ -30,6 +31,8 @@ export default function Worklist() {
         </div>
         {can(me, 'reports.create') && <Link to="/reports/new" className="button primary">New report</Link>}
       </div>
+
+      {settings.hosted && can(me, 'users.manage') && <OnboardingChecklist />}
 
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Status">

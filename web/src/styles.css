@@ -386,3 +386,8 @@ label.check input { margin-top: .2rem; }
 
 .slug-input { display: flex; align-items: center; gap: .25rem; }
 .slug-input input { flex: 1; min-width: 0; }
+.onboarding { margin-bottom: 1rem; padding: 1rem 1.25rem; }
+.onboarding h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+.onboarding ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.onboarding li.done { color: var(--muted, inherit); text-decoration: line-through; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -100,6 +100,7 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
     {
         clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,
         Signup = signup,
+        Hosted = http.RequestServices.IsHosted(),
         // Hosted: signed up, email not confirmed yet, so no reports can be started.
         AwaitingEmailVerification = http.RequestServices.GetService<ITenantContext>()?.Tenant?.AwaitingEmailVerification == true,
         BaseDomain = signup ? http.Request.Host.Value : null,
@@ -115,6 +116,7 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
 app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 
 app.MapSignupEndpoints();
+app.MapClinicEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapPatientEndpoints();
