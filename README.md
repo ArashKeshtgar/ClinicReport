@@ -173,6 +173,31 @@ dotnet run --project src/ClinicReport.Api --launch-profile connected   # with Cl
 | `ClinicHub__ClientId`, `ClinicHub__ClientSecret` | ClinicReport's registration in ClinicHub (`Sso:Clients` there). |
 | `ClinicHub__DatabasePattern` | `Data Source=/data/clinicreport-{clinic}.db` in the container. |
 
+## Hosted (several clinics, one service)
+
+Work in progress: the multi-tenant service. With `Hosting__Mode=Hosted` one ClinicReport serves many clinics, each
+at its own subdomain (`north.clinicreport.example.com`, under `Hosting__BaseDomain`) with its own accounts. ClinicHub's
+sign-in is not used in this mode. Sign-up and billing are not built yet; tenants are added to the catalog by hand.
+
+- **A catalog of tenants** (`Hosting__CatalogConnection`, `catalog.db`): each clinic's slug, name, status and
+  letterhead. It holds no health information.
+- **One database per tenant** (`Hosting__DatabasePattern`, `clinicreport-{clinic}.db`), created with the bundled
+  templates at the tenant's first request. The host decides the tenant; a session signed in at one subdomain is
+  refused at another (401). A suspended tenant can sign in, read and export, but not change anything (403). An
+  unknown or cancelled one is not found (404).
+- **Upgrades.** `dotnet ClinicReport.Api.dll --migrate-all` migrates every tenant's database, one after another. A
+  tenant that fails is logged and the others carry on; the exit code is 1 if any failed.
+
+Why a database per tenant rather than one shared database with a `TenantId` column: a clinic's patients are kept
+apart by where they are stored, not by a filter every query has to remember. A tenant's export, backup or deletion is
+one file. What it costs:
+
+- **Migrations run N times**, once per tenant, hence `--migrate-all` before a new version takes requests.
+- **One instance.** Who has a report open is kept in memory and SignalR has no backplane, so the service runs as a
+  single instance.
+- **SQLite.** Enough for a VPS and a few dozen clinics. Past that, the next step is PostgreSQL with a database (or
+  schema) per tenant; that is not part of this work.
+
 ## How a template works
 
 ```json
