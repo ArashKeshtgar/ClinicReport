@@ -28,7 +28,9 @@ public static class SignupEndpoints
     }.ToFrozenSet();
 
     public record SignupRequest(string? ClinicName, string? Slug, string? AdminName, string? Email, string? Password);
-    public record SignupResult(string Slug, string Url, DateTime TrialEndsAt);
+    /// <param name="EmailSent">False when the confirmation could not be sent; the administrator can send it again after signing in.</param>
+    public record SignupResult(string Slug, string Url, DateTime TrialEndsAt, bool EmailSent);
+    public record VerifyEmailBody(string? Token);
     public record SlugCheck(string Slug, bool Available, string? Problem);
 
     /// <summary>Why a slug cannot be a clinic's address, or null when it can (if it is free).</summary>
@@ -59,7 +61,7 @@ public static class SignupEndpoints
         });
 
         api.MapPost("/", async (SignupRequest req, HttpContext http, CatalogDbContext catalog, ClinicReportDatabases databases,
-            TenantDirectory directory, IPasswordHasher<AppUser> hasher, TimeProvider clock, ILoggerFactory logs, CancellationToken ct) =>
+            TenantDirectory directory, IPasswordHasher<AppUser> hasher, IMailSender mail, TimeProvider clock, ILoggerFactory logs, CancellationToken ct) =>
         {
             var name = (req.ClinicName ?? "").Trim();
             var slug = (req.Slug ?? "").Trim().ToLowerInvariant();
@@ -87,8 +89,9 @@ public static class SignupEndpoints
             var tenant = new Tenant
             {
                 Slug = slug, Name = name, Status = TenantStatus.Trial, Plan = "Trial", TrialEndsAt = now + TrialLength,
-                CreatedAt = now, Settings = new TenantSettings(),
+                CreatedAt = now, Settings = new TenantSettings(), OwnerEmail = email,
             };
+            var token = EmailVerification.NewToken(tenant, now);
             catalog.Tenants.Add(tenant);
             try
             {
@@ -127,8 +130,39 @@ public static class SignupEndpoints
             // A request to the address before now found no tenant, which is never cached; this is for whatever else is.
             directory.Forget(slug);
             var url = $"{http.Request.Scheme}://{slug}.{http.Request.Host}/";
-            return Results.Created(url, new SignupResult(slug, url, tenant.TrialEndsAt!.Value));
+            var sent = await EmailVerification.SendAsync(tenant, token, url, mail, logs.CreateLogger("Signup"), CancellationToken.None);
+            return Results.Created(url, new SignupResult(slug, url, tenant.TrialEndsAt!.Value, sent));
         }).RequireRateLimiting(SignupRateLimit);
+
+        // At the clinic's own address: the link from the email. Under /api/auth, so it works before signing in and while suspended.
+        var verify = app.MapGroup("/api/auth/verify-email").WithTags("Signup").AddEndpointFilter(TenantOnly);
+
+        verify.MapPost("/", async (VerifyEmailBody body, ITenantContext current, CatalogDbContext catalog, TenantDirectory directory,
+            TimeProvider clock, CancellationToken ct) =>
+        {
+            var tenant = await catalog.Tenants.SingleAsync(t => t.Id == current.Tenant!.Id, ct);
+            if (!tenant.AwaitingEmailVerification)
+                return Results.Ok(new { verified = true });
+            if (!EmailVerification.TryConfirm(tenant, body.Token, clock.GetUtcNow().UtcDateTime))
+                return Results.Problem("This link is wrong, used or expired. Sign in and send a new one.", statusCode: StatusCodes.Status400BadRequest);
+            await catalog.SaveChangesAsync(ct);
+            directory.Forget(tenant.Slug);
+            return Results.Ok(new { verified = true });
+        }).AllowAnonymous().RequireRateLimiting(AuthEndpoints.LoginRateLimit);
+
+        // A new link (the old one stops working), for the clinic's administrators.
+        verify.MapPost("/resend", async (HttpContext http, ITenantContext current, CatalogDbContext catalog, IMailSender mail,
+            TimeProvider clock, ILoggerFactory logs, CancellationToken ct) =>
+        {
+            var tenant = await catalog.Tenants.SingleAsync(t => t.Id == current.Tenant!.Id, ct);
+            if (!tenant.AwaitingEmailVerification)
+                return Results.Ok(new { sent = false, verified = true });
+            var token = EmailVerification.NewToken(tenant, clock.GetUtcNow().UtcDateTime);
+            await catalog.SaveChangesAsync(ct);
+            var url = $"{http.Request.Scheme}://{http.Request.Host}/";
+            var sent = await EmailVerification.SendAsync(tenant, token, url, mail, logs.CreateLogger("Signup"), CancellationToken.None);
+            return Results.Ok(new { sent, verified = false });
+        }).RequireAuthorization(Permissions.UsersManage).RequireRateLimiting(SignupRateLimit);
     }
 
     /// <summary>
@@ -139,6 +173,9 @@ public static class SignupEndpoints
         await catalog.Tenants.AnyAsync(t => t.Slug == slug, ct) || databases.Exists(slug);
 
     private static IResult Taken() => Results.Problem("That address is taken.", statusCode: StatusCodes.Status409Conflict);
+
+    private static async ValueTask<object?> TenantOnly(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next) =>
+        ctx.HttpContext.RequestServices.GetRequiredService<ITenantContext>().Tenant is null ? Results.NotFound() : await next(ctx);
 
     /// <summary>Sign-up is the service's, on the root domain; a tenant's subdomain has none.</summary>
     private static async ValueTask<object?> RootDomainOnly(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next) =>

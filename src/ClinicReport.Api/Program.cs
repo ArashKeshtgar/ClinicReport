@@ -100,6 +100,8 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
     {
         clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,
         Signup = signup,
+        // Hosted: signed up, email not confirmed yet, so no reports can be started.
+        AwaitingEmailVerification = http.RequestServices.GetService<ITenantContext>()?.Tenant?.AwaitingEmailVerification == true,
         BaseDomain = signup ? http.Request.Host.Value : null,
         Demo = demo.Value.Enabled && !hub.Value.Enabled,
         AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,

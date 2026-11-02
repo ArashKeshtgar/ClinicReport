@@ -64,6 +64,11 @@ public static class Tenancy
         return ClinicReportDatabases.IsValidSlug(slug) ? slug : null;
     }
 
+    /// <summary>Starting a report: a new one, or one from an order.</summary>
+    private static bool StartsReport(PathString path) =>
+        path.Equals("/api/reports") || path.Equals("/api/reports/")
+        || (path.StartsWithSegments("/api/orders") && path.Value!.EndsWith("/start", StringComparison.Ordinal));
+
     /// <summary>The base domain itself: the service's own front page, where clinics sign up.</summary>
     public static bool IsRoot(string host, string baseDomain) => string.Equals(host, baseDomain.Trim('.'), StringComparison.OrdinalIgnoreCase);
 
@@ -157,6 +162,12 @@ public static class Tenancy
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await ctx.Response.WriteAsJsonAsync(new { title = "This clinic's account is suspended. Reports can be read and exported, not changed." });
+                return;
+            }
+            if (tenant.Tenant.AwaitingEmailVerification && HttpMethods.IsPost(method) && StartsReport(ctx.Request.Path))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { title = "Confirm the clinic's email address first: open the link we sent when you signed up.", code = "verify-email" });
                 return;
             }
             await next();

@@ -25,6 +25,9 @@ public class HostedFactory : ApiFactory
 
     protected virtual int SignupsPerHour => 1000;
 
+    /// <summary>Mail the app sent, instead of SMTP.</summary>
+    public RecordingMailSender Mail { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -33,6 +36,7 @@ public class HostedFactory : ApiFactory
         builder.UseSetting("Hosting:CatalogConnection", $"Data Source={Path.Combine(_dir, "catalog.db")}");
         builder.UseSetting("Hosting:DatabasePattern", $"Data Source={Path.Combine(_dir, "clinicreport-{clinic}.db")}");
         builder.UseSetting("RateLimits:SignupsPerHour", SignupsPerHour.ToString());
+        builder.ConfigureTestServices(s => s.AddSingleton<IMailSender>(Mail));
     }
 
     /// <summary>The service's own front page, where clinics sign up.</summary>
@@ -81,6 +85,35 @@ public class HostedFactory : ApiFactory
         await base.DisposeAsync();
         ApiFactory.ClearPools(Directory.GetFiles(_dir, "*.db"));
         Directory.Delete(_dir, recursive: true);
+    }
+}
+
+public sealed class RecordingMailSender : IMailSender
+{
+    public List<OutgoingMail> Sent { get; } = [];
+
+    /// <summary>Makes sending fail, like an SMTP server that is down.</summary>
+    public bool Fail { get; set; }
+
+    public Task SendAsync(OutgoingMail mail, CancellationToken ct = default)
+    {
+        if (Fail)
+            throw new IOException("SMTP is down (test).");
+        lock (Sent)
+            Sent.Add(mail);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The confirmation token in the last mail to this address.</summary>
+    public string TokenFor(string to)
+    {
+        lock (Sent)
+        {
+            var body = Sent.Last(m => m.To == to).Body;
+            var start = body.IndexOf("token=", StringComparison.Ordinal) + "token=".Length;
+            // Split() with no separators splits on any white space: the token ends its line.
+            return body[start..].Split()[0];
+        }
     }
 }
 

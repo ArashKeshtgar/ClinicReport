@@ -191,4 +191,99 @@ public class SignupTests : IAsyncLifetime
             Assert.Equal(HttpStatusCode.BadRequest, (await root.PostAsJsonAsync("/api/signup", Request("admin"))).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await root.PostAsJsonAsync("/api/signup", Request("admin"))).StatusCode);
     }
+
+    private async Task<HttpStatusCode> StartReportAsync(HttpClient client) =>
+        (await client.PostAsJsonAsync("/api/reports", new { patientId = 0, templateId = 0, examDate = "2026-11-02" })).StatusCode;
+
+    private async Task<bool> AwaitingAsync(string slug) =>
+        (await _factory.ClientFor(slug).GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("awaitingEmailVerification").GetBoolean();
+
+    [Fact]
+    public async Task No_report_starts_until_the_owner_confirms_the_email_with_the_link()
+    {
+        var res = await SignUpAsync("harbour");
+        Assert.True((await res.Content.ReadFromJsonAsync<SignupEndpoints.SignupResult>())!.EmailSent);
+        var mail = Assert.Single(_factory.Mail.Sent);
+        Assert.Equal("owner@example.com", mail.To);
+        Assert.Contains($"http://harbour.{HostedFactory.BaseDomain}/verify-email?token=", mail.Body);
+
+        var (client, _) = await LogInAsync("harbour");
+        Assert.True(await AwaitingAsync("harbour"));
+        var refused = await client.PostAsJsonAsync("/api/reports", new { patientId = 0, templateId = 0, examDate = "2026-11-02" });
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Equal("verify-email", (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+
+        // The link works without signing in, at the clinic's address.
+        var anonymous = _factory.ClientFor("harbour");
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.PostAsJsonAsync("/api/auth/verify-email", new { token = _factory.Mail.TokenFor("owner@example.com") })).StatusCode);
+
+        Assert.False(await AwaitingAsync("harbour"));
+        Assert.NotEqual(HttpStatusCode.Forbidden, await StartReportAsync(client));
+        var tenant = await TenantAsync("harbour");
+        Assert.NotNull(tenant!.EmailVerifiedAt);
+        Assert.Null(tenant.EmailTokenHash);
+    }
+
+    [Fact]
+    public async Task A_wrong_token_or_another_clinics_token_confirms_nothing()
+    {
+        await SignUpAsync("east", email: "east@example.com");
+        await SignUpAsync("west", email: "west@example.com");
+        var eastToken = _factory.Mail.TokenFor("east@example.com");
+
+        foreach (var token in new[] { eastToken, "made-up", "" })
+            Assert.Equal(HttpStatusCode.BadRequest,
+                (await _factory.ClientFor("west").PostAsJsonAsync("/api/auth/verify-email", new { token })).StatusCode);
+
+        Assert.True(await AwaitingAsync("west"));
+        Assert.True(await AwaitingAsync("east"));
+        // The tenant's token is only kept as its hash.
+        Assert.DoesNotContain(eastToken, (await TenantAsync("east"))!.EmailTokenHash);
+    }
+
+    [Fact]
+    public async Task When_the_mail_fails_the_clinic_is_still_created_and_the_administrator_sends_a_new_link()
+    {
+        _factory.Mail.Fail = true;
+        var res = await SignUpAsync("harbour");
+        Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+        Assert.False((await res.Content.ReadFromJsonAsync<SignupEndpoints.SignupResult>())!.EmailSent);
+        var firstHash = (await TenantAsync("harbour"))!.EmailTokenHash;
+
+        _factory.Mail.Fail = false;
+        var (client, _) = await LogInAsync("harbour");
+        var resend = await client.PostAsync("/api/auth/verify-email/resend", null);
+        Assert.Equal(HttpStatusCode.OK, resend.StatusCode);
+        Assert.True((await resend.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("sent").GetBoolean());
+        Assert.NotEqual(firstHash, (await TenantAsync("harbour"))!.EmailTokenHash);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/verify-email",
+            new { token = _factory.Mail.TokenFor("owner@example.com") })).StatusCode);
+        Assert.False(await AwaitingAsync("harbour"));
+    }
+
+    [Fact]
+    public async Task A_new_link_makes_the_old_one_worthless_and_only_administrators_ask_for_one()
+    {
+        await SignUpAsync("harbour");
+        var oldToken = _factory.Mail.TokenFor("owner@example.com");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.ClientFor("harbour").PostAsync("/api/auth/verify-email/resend", null)).StatusCode);
+        // Demo data is seeded in tests: a typist of the same clinic may not ask either.
+        var (typist, _) = await _factory.SignInAtAsync("harbour", "demo.typist");
+        Assert.Equal(HttpStatusCode.Forbidden, (await typist.PostAsync("/api/auth/verify-email/resend", null)).StatusCode);
+
+        var (admin, _) = await LogInAsync("harbour");
+        await admin.PostAsync("/api/auth/verify-email/resend", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync("/api/auth/verify-email", new { token = oldToken })).StatusCode);
+        Assert.True(await AwaitingAsync("harbour"));
+    }
+
+    [Fact]
+    public async Task Tenants_the_operator_added_have_no_email_to_confirm()
+    {
+        var (client, _) = await _factory.SignInAtAsync("north");
+        Assert.False(await AwaitingAsync("north"));
+        Assert.NotEqual(HttpStatusCode.Forbidden, await StartReportAsync(client));
+    }
 }

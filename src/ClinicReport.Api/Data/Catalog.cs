@@ -51,6 +51,17 @@ public class Tenant
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
     public TenantSettings? Settings { get; set; }
+
+    /// <summary>Who signed the clinic up. Null for a tenant added by the operator, which has nothing to confirm.</summary>
+    public string? OwnerEmail { get; set; }
+    public DateTime? EmailVerifiedAt { get; set; }
+
+    /// <summary>SHA-256 of the one-time confirmation token; the token itself is only in the email.</summary>
+    public string? EmailTokenHash { get; set; }
+    public DateTime? EmailTokenExpiresAt { get; set; }
+
+    /// <summary>Signed up but the email is not confirmed yet: no reports can be started.</summary>
+    public bool AwaitingEmailVerification => OwnerEmail is not null && EmailVerifiedAt is null;
 }
 
 /// <summary>What a tenant prints on its reports. In standalone and connected mode this comes from the "Clinic" settings.</summary>
@@ -80,6 +91,8 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             e.Property(t => t.Plan).HasMaxLength(40);
             e.Property(t => t.StripeCustomerId).HasMaxLength(100);
             e.Property(t => t.StripeSubscriptionId).HasMaxLength(100);
+            e.Property(t => t.OwnerEmail).HasMaxLength(64);
+            e.Property(t => t.EmailTokenHash).HasMaxLength(64);
             e.HasOne(t => t.Settings).WithOne().HasForeignKey<TenantSettings>(s => s.TenantId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -120,6 +133,8 @@ public static class CatalogSetup
             throw new InvalidOperationException("Hosted mode signs people in locally; leave ClinicHub:Authority empty.");
         services.AddDbContext<CatalogDbContext>(o => o.UseSqlite(hosting.CatalogConnection));
         services.AddTenancy();
+        services.Configure<MailOptions>(config.GetSection("Mail"));
+        services.AddSingleton<IMailSender, SmtpMailSender>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.
         services.AddSingleton<ClinicReportDatabases>();
         services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(

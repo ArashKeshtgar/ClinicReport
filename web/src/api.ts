@@ -24,10 +24,12 @@ export type Settings = {
   signIn: 'local' | 'clinichub'; clinicHubUrl: string | null
   /** Hosted mode, on the root domain: no clinic here, only sign-up. Clinics are subdomains of baseDomain. */
   signup?: boolean; baseDomain?: string | null
+  /** Hosted: signed up, but the owner has not confirmed the email yet; no reports can be started. */
+  awaitingEmailVerification?: boolean
 }
 
 export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
-export type SignupResult = { slug: string; url: string; trialEndsAt: string }
+export type SignupResult = { slug: string; url: string; trialEndsAt: string; emailSent: boolean }
 export type SlugCheck = { slug: string; available: boolean; problem: string | null }
 
 export type Sex = 'M' | 'F' | 'X' | 'U'
@@ -156,6 +158,8 @@ export const api = {
   settings: () => get<Settings>('/api/settings'),
   checkSlug: (value: string) => get<SlugCheck>(`/api/signup/slug?value=${encodeURIComponent(value)}`),
   signup: (body: SignupRequest) => request<SignupResult>('POST', '/api/signup', body),
+  verifyEmail: (token: string) => request<{ verified: boolean }>('POST', '/api/auth/verify-email', { token }),
+  resendVerification: () => request<{ sent: boolean; verified: boolean }>('POST', '/api/auth/verify-email/resend'),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),
   demoLogin: (userName: string) => request<Me>('POST', '/api/auth/demo-login', { userName }),

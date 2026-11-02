@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router'
 import { api, can, type Me, type Settings } from './api'
 import Login, { ClinicHubSignIn } from './pages/Login'
 import Signup from './pages/Signup'
+import VerifyEmail, { VerifyEmailBanner } from './pages/VerifyEmail'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -58,6 +59,8 @@ export default function App() {
   if (!settings || me === undefined) return <div className="center muted">Loading…</div>
   // Hosted, on the root domain: the service's sign-up page; each clinic works at its own subdomain.
   if (settings.signup) return <Signup baseDomain={settings.baseDomain ?? window.location.host} />
+  // The link from the sign-up email works before signing in.
+  if (location.pathname === '/verify-email') return <VerifyEmail settings={settings} onVerified={() => api.settings().then(setSettings)} />
   if (!me) return settings.signIn === 'clinichub' ? <ClinicHubSignIn settings={settings} /> : <Login settings={settings} onSignedIn={setMe} />
   if (me.pendingAction) return <PendingActionPage me={me} settings={settings} onDone={setMe} onSignOut={signOut} />
 
@@ -70,6 +73,7 @@ export default function App() {
           Public demo with synthetic patients. <strong>Do not enter real patient information.</strong>
         </div>
       )}
+      {!printing && settings.awaitingEmailVerification && <VerifyEmailBanner canResend={can(me, 'users.manage')} />}
       <main className={printing ? '' : 'page'}>
         <Routes>
           <Route path="/" element={<Worklist />} />

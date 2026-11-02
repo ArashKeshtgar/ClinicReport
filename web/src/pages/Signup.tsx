@@ -55,6 +55,9 @@ export default function Signup({ baseDomain }: { baseDomain: string }) {
           <div className="login-brand"><Logo size={40} /><h1>Your clinic is ready</h1></div>
           <p>{clinicName} is at <a href={done.url}>{done.url}</a>. Sign in there with <strong>{email}</strong> and the
             password you chose.</p>
+          <p>{done.emailSent
+            ? <>We sent a link to {email}. Open it to confirm the address; reports can be started once it is confirmed.</>
+            : <>The confirmation email could not be sent. After signing in, use “Send a new link” at the top of the page.</>}</p>
           <p className="muted small">Free trial until {new Date(done.trialEndsAt).toLocaleDateString()}.</p>
           <a className="button primary" href={done.url}>Go to {clinicName}</a>
         </div>
