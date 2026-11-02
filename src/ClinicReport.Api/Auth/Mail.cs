@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace ClinicReport.Api.Auth;
 
-/// <summary>Outgoing mail (Hosted mode: sign-up confirmation). In development, Mailpit on localhost:1025 catches it.</summary>
+/// <summary>Outgoing mail (Hosted mode: sign-up confirmation). In development, Mailpit on localhost:2525 catches it.</summary>
 public class MailOptions
 {
     public string? SmtpHost { get; set; }
@@ -19,6 +19,9 @@ public class MailOptions
     public string? Password { get; set; }
 
     public string From { get; set; } = "ClinicReport <no-reply@localhost>";
+
+    /// <summary>A server that accepts the connection and never answers must not hold a sign-up up.</summary>
+    public int TimeoutSeconds { get; set; } = 15;
 }
 
 public record OutgoingMail(string To, string Subject, string Body);
@@ -35,14 +38,16 @@ public sealed class SmtpMailSender(IOptions<MailOptions> options) : IMailSender
         var o = options.Value;
         if (string.IsNullOrWhiteSpace(o.SmtpHost))
             throw new InvalidOperationException("Mail:SmtpHost is not set.");
-        using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
+        using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl, Timeout = o.TimeoutSeconds * 1000 };
         if (!string.IsNullOrEmpty(o.UserName))
             client.Credentials = new NetworkCredential(o.UserName, o.Password);
         using var message = new MailMessage(MailAddress.TryCreate(o.From, out var from) ? from : new MailAddress("no-reply@localhost"), new MailAddress(mail.To))
         {
             Subject = mail.Subject, Body = mail.Body, BodyEncoding = Encoding.UTF8, SubjectEncoding = Encoding.UTF8,
         };
-        await client.SendMailAsync(message, ct);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(o.TimeoutSeconds));
+        await client.SendMailAsync(message, timeout.Token);
     }
 }
 

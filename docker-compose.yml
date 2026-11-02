@@ -22,13 +22,14 @@ services:
       # Demo__ResetHourUtc: "8"        # wipe and re-seed the demo daily at 08:00 UTC
     restart: unless-stopped
 
-  # Hosted mode in development catches its sign-up emails here (http://localhost:8025), with Mail__SmtpHost=mailpit
-  # and Mail__SmtpPort=1025. Started only with: docker compose --profile mail up -d
+  # Hosted mode in development catches its sign-up emails here (http://localhost:8025): the API run from the source
+  # sends to localhost:2525 (appsettings.Development.json), a container to Mail__SmtpHost=mailpit, Mail__SmtpPort=1025.
+  # 2525 on the host, since Windows often has 1025 taken by an RPC service. Started only with: docker compose --profile mail up -d
   mailpit:
     image: axllent/mailpit:latest
     profiles: ["mail"]
     ports:
-      - "1025:1025"
+      - "2525:1025"
       - "8025:8025"
 
 volumes:
