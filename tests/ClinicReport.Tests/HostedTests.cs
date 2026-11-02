@@ -5,6 +5,7 @@ using ClinicReport.Api.Auth;
 using ClinicReport.Api.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -67,7 +68,7 @@ public class HostedFactory : ApiFactory
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
+        ApiFactory.ClearPools(Directory.GetFiles(_dir, "*.db"));
         Directory.Delete(_dir, recursive: true);
     }
 }
@@ -231,6 +232,40 @@ public class HostedTests : IAsyncLifetime
         south.DefaultRequestHeaders.Add("Cookie", northCookie);
         Assert.Equal(HttpStatusCode.Unauthorized, (await south.GetAsync("/api/patients")).StatusCode);
         Assert.DoesNotContain(recorder.Queries, q => q.Database == _factory.DatabaseOf("south") && q.Sql.Contains("\"Users\""));
+    }
+
+    [Fact]
+    public async Task A_tenants_report_can_be_opened_live()
+    {
+        var (client, cookie) = await _factory.SignInAtAsync("north", "demo.physician");
+        var report = (int)(await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonArray>("/api/reports"))![0]!["id"]!;
+
+        var presence = new TaskCompletionSource<string>();
+        await using var hub = LiveIsolationTests.LongPollingHub(_factory.Server, client.BaseAddress!, cookie);
+        hub.On<System.Text.Json.JsonElement>("presence", p => presence.TrySetResult(p.GetRawText()));
+        await hub.StartAsync();
+        await hub.InvokeAsync("JoinReport", report);
+
+        Assert.Single(System.Text.Json.Nodes.JsonNode.Parse(await presence.Task.WaitAsync(TimeSpan.FromSeconds(10)))!.AsArray());
+    }
+
+    [Fact]
+    public async Task A_tenant_change_in_the_catalog_applies_once_the_tenant_is_forgotten()
+    {
+        var (client, _) = await _factory.SignInAtAsync("north");
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/patients", NewPatient("H-CACHE-1"))).StatusCode);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            (await catalog.Tenants.SingleAsync(t => t.Slug == "north")).Status = TenantStatus.Suspended;
+            await catalog.SaveChangesAsync();
+        }
+        // Still the cached tenant: the catalog is not read on every request.
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/patients", NewPatient("H-CACHE-2"))).StatusCode);
+
+        _factory.Services.GetRequiredService<TenantDirectory>().Forget("north");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/patients", NewPatient("H-CACHE-3"))).StatusCode);
     }
 
     private record Settings(string Name, string? Address, string? ReportFooter);

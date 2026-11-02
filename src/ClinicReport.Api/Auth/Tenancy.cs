@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using ClinicReport.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace ClinicReport.Api.Auth;
@@ -20,10 +21,35 @@ internal sealed class TenantContext : ITenantContext
     public bool ReadOnly => Tenant?.Status == TenantStatus.Suspended;
 }
 
+/// <summary>
+/// Hosted mode: tenants by slug, read from the catalog and kept for a short while, so requests don't query the catalog
+/// every time. Whatever changes a tenant (its status, plan or settings) calls <see cref="Forget"/>.
+/// </summary>
+public sealed class TenantDirectory(IMemoryCache cache)
+{
+    public static readonly TimeSpan KeepFor = TimeSpan.FromSeconds(30);
+
+    private static string Key(string slug) => "tenant|" + slug;
+
+    /// <summary>The tenant, or null when there is none. A slug with no tenant is not kept: anyone can make up subdomains.</summary>
+    public async Task<Tenant?> FindAsync(string slug, CatalogDbContext catalog, CancellationToken ct = default)
+    {
+        if (cache.TryGetValue(Key(slug), out Tenant? tenant))
+            return tenant;
+        tenant = await catalog.Tenants.AsNoTracking().Include(t => t.Settings).SingleOrDefaultAsync(t => t.Slug == slug, ct);
+        if (tenant is not null)
+            cache.Set(Key(slug), tenant, KeepFor);
+        return tenant;
+    }
+
+    public void Forget(string slug) => cache.Remove(Key(slug));
+}
+
 public static class Tenancy
 {
     public static void AddTenancy(this IServiceCollection services)
     {
+        services.AddSingleton<TenantDirectory>();
         services.AddScoped<TenantContext>();
         services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
     }
@@ -68,8 +94,8 @@ public static class Tenancy
             }
             var hosting = ctx.RequestServices.GetRequiredService<IOptions<HostingOptions>>().Value;
             var slug = SlugOf(ctx.Request.Host.Host, hosting.BaseDomain!);
-            var tenant = slug is null ? null : await ctx.RequestServices.GetRequiredService<CatalogDbContext>().Tenants
-                .AsNoTracking().Include(t => t.Settings).SingleOrDefaultAsync(t => t.Slug == slug);
+            var tenant = slug is null ? null : await ctx.RequestServices.GetRequiredService<TenantDirectory>()
+                .FindAsync(slug, ctx.RequestServices.GetRequiredService<CatalogDbContext>(), ctx.RequestAborted);
             if (tenant is null || tenant.Status == TenantStatus.Cancelled)
             {
                 ctx.Response.StatusCode = StatusCodes.Status404NotFound;

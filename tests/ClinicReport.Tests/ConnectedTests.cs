@@ -140,7 +140,7 @@ public class ConnectedFactory : WebApplicationFactory<Program>
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
+        ApiFactory.ClearPools(Directory.GetFiles(_dir, "*.db"));
         Directory.Delete(_dir, recursive: true);
     }
 

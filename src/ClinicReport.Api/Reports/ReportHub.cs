@@ -47,7 +47,7 @@ public class PresenceTracker
 /// and audited in one place); the hub only carries presence and the "reportChanged" broadcasts.
 /// </summary>
 [Authorize(Policy = Permissions.ReportsView)]
-public class ReportHub(PresenceTracker presence, ClinicReportDbContext db) : Hub
+public class ReportHub(PresenceTracker presence, IServiceProvider services) : Hub
 {
     /// <summary>Standalone has one database and no clinic claim.</summary>
     public const string StandaloneClinic = "standalone";
@@ -58,9 +58,21 @@ public class ReportHub(PresenceTracker presence, ClinicReportDbContext db) : Hub
 
     public static string GroupName(ReportRoom room) => $"report-{room.Clinic}-{room.ReportId}";
 
+    private static Task<string?> ServiceOfAsync(ClinicReportDbContext db, int reportId) =>
+        db.Reports.Where(r => r.Id == reportId).Select(r => r.TemplateVersion.Template.Service).SingleOrDefaultAsync();
+
     public async Task JoinReport(int reportId)
     {
-        var service = await db.Reports.Where(r => r.Id == reportId).Select(r => r.TemplateVersion.Template.Service).SingleOrDefaultAsync();
+        // Per-clinic databases are opened from the connection's user, not through the scoped DbContext: that one reads the
+        // clinic from the HTTP request (Connected) or the host (Hosted), and a hub call over LongPolling has neither.
+        string? service;
+        if (services.GetService<ClinicReportDatabases>() is { } databases)
+        {
+            await using var clinicDb = await databases.OpenAsync(ClinicOf(Context.User));
+            service = await ServiceOfAsync(clinicDb, reportId);
+        }
+        else
+            service = await ServiceOfAsync(services.GetRequiredService<ClinicReportDbContext>(), reportId);
         if (service is null || !Context.User!.CanAccessService(service))
             throw new HubException("Report not found.");
 

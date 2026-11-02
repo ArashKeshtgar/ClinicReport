@@ -21,8 +21,7 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:ClinicReport", $"Data Source={_dbPath}");
         builder.UseSetting("Demo:Enabled", "true");
         builder.UseSetting("RateLimits:LoginsPerMinute", "1000");
-        builder.UseSetting("Demo:LockAccounts", LockAccounts ? "true" : "false");
-    }
+        builder.UseSetting("Demo:LockAccounts", LockAccounts ? "true" : "false");    }
 
     public async Task<HttpClient> SignInAsync(string demoUser)
     {
@@ -36,8 +35,21 @@ public class ApiFactory : WebApplicationFactory<Program>
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
+        ClearPools(_dbPath);
         File.Delete(_dbPath);
+    }
+
+    /// <summary>
+    /// Closes the pooled connections to these database files so they can be deleted. Not ClearAllPools: that also
+    /// closes the connections of test classes running in parallel, in the middle of their requests.
+    /// </summary>
+    public static void ClearPools(params IEnumerable<string> files)
+    {
+        foreach (var file in files)
+        {
+            using var connection = new SqliteConnection($"Data Source={file}");
+            SqliteConnection.ClearPool(connection);
+        }
     }
 }
 

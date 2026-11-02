@@ -91,7 +91,17 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<
 
     public async Task<ClinicReportDbContext> OpenAsync(string slug)
     {
-        await _ready.GetOrAdd(slug, s => new Lazy<Task>(() => PrepareAsync(s))).Value;
+        var ready = _ready.GetOrAdd(slug, s => new Lazy<Task>(() => PrepareAsync(s)));
+        try
+        {
+            await ready.Value;
+        }
+        catch
+        {
+            // Not kept: the next request tries again, instead of the clinic failing until a restart.
+            _ready.TryRemove(new KeyValuePair<string, Lazy<Task>>(slug, ready));
+            throw;
+        }
         return Create(slug);
     }
 

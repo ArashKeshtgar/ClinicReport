@@ -76,6 +76,32 @@ public class LiveIsolationTests(ConnectedFactory factory) : IClassFixture<Connec
         })
         .Build();
 
+    /// <summary>LongPolling, the browser's fallback: every hub call is a request of its own, without the hub's user.</summary>
+    public static HubConnection LongPollingHub(Microsoft.AspNetCore.TestHost.TestServer server, Uri baseAddress, string cookie) => new HubConnectionBuilder()
+        .WithUrl(new Uri(baseAddress, "/hubs/report"), HttpTransportType.LongPolling, o =>
+        {
+            o.HttpMessageHandlerFactory = _ => server.CreateHandler();
+            o.Headers["Cookie"] = cookie;
+            o.Headers["X-ClinicReport"] = "1";
+        })
+        .Build();
+
+    [Fact]
+    public async Task A_report_can_be_opened_live_over_long_polling()
+    {
+        // A clinic of its own: the other test needs report 1 to be the first report at both of its clinics.
+        var poll = await SignInAsync("23", "dr.poll", "pollside");
+        var report = await NewReportAsync(poll.Http, "P-1");
+
+        var presence = new TaskCompletionSource<string>();
+        await using var hub = LongPollingHub(factory.Server, factory.Server.BaseAddress, poll.Cookie);
+        hub.On<JsonElement>("presence", p => presence.TrySetResult(p.GetRawText()));
+        await hub.StartAsync();
+        await hub.InvokeAsync("JoinReport", report);
+
+        Assert.Contains("dr.poll", await presence.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
     [Fact]
     public async Task Report_1_of_one_clinic_is_not_live_at_another()
     {

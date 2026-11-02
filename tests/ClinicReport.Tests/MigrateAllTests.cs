@@ -52,6 +52,18 @@ public class MigrateAllTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_tenant_that_failed_to_open_is_tried_again()
+    {
+        Directory.CreateDirectory(_factory.DatabaseOf("paused"));
+        Assert.Equal(1, await TenantMigration.MigrateAllAsync(_factory.Services));
+
+        // Once the cause is gone, the same process opens it: the failure was not kept.
+        Directory.Delete(_factory.DatabaseOf("paused"));
+        Assert.Equal(0, await TenantMigration.MigrateAllAsync(_factory.Services));
+        await AssertMigratedAsync("paused");
+    }
+
+    [Fact]
     public void Hosted_mode_runs_no_ClinicHub_senders()
     {
         Assert.Null(_factory.Services.GetService<ResultSender>());
