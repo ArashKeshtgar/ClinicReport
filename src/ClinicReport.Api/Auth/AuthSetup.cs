@@ -91,9 +91,10 @@ public static class AuthSetup
     private static async Task LoadCurrentAccess(CookieValidatePrincipalContext ctx)
     {
         // Hosted: a session from another tenant's subdomain is refused before this tenant's users are looked at,
-        // since the same user Id exists in every tenant's database.
+        // since the same user Id exists in every tenant's database. The root domain has no users at all.
         if (ctx.HttpContext.RequestServices.IsHosted()
-            && ctx.Principal?.FindFirstValue(ClinicHubClaims.Clinic) != ctx.HttpContext.RequestServices.GetRequiredService<ITenantContext>().Tenant?.Slug)
+            && (ctx.HttpContext.RequestServices.GetRequiredService<ITenantContext>().Tenant?.Slug is not { } tenant
+                || ctx.Principal?.FindFirstValue(ClinicHubClaims.Clinic) != tenant))
         {
             ctx.RejectPrincipal();
             return;

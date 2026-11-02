@@ -383,3 +383,6 @@ label.check input { margin-top: .2rem; }
 .code-row { display: flex; gap: .5rem; margin-top: .4rem; }
 .code-row input { width: 9rem; font-family: var(--mono-font); letter-spacing: .15em; text-align: center; }
 @media (max-width: 1000px) { .users-layout { grid-template-columns: 1fr; } .user-editor { position: static; max-height: none; } }
+
+.slug-input { display: flex; align-items: center; gap: .25rem; }
+.slug-input input { flex: 1; min-width: 0; }

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
@@ -79,14 +80,34 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<
     public static bool IsValidSlug(string? slug) =>
         slug is { Length: >= 2 and <= 40 } && slug.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
 
-    public ClinicReportDbContext Create(string slug)
+    private string ConnectionString(string slug)
     {
         if (!IsValidSlug(slug))
             throw new InvalidOperationException("Invalid clinic name.");
         var pattern = hosting.Value.Hosted ? hosting.Value.DatabasePattern : options.Value.DatabasePattern;
-        var cs = pattern.Replace("{clinic}", slug);
-        return new ClinicReportDbContext(new DbContextOptionsBuilder<ClinicReportDbContext>().UseSqlite(cs)
+        return pattern.Replace("{clinic}", slug);
+    }
+
+    public ClinicReportDbContext Create(string slug) =>
+        new(new DbContextOptionsBuilder<ClinicReportDbContext>().UseSqlite(ConnectionString(slug))
             .AddInterceptors(services.GetServices<IInterceptor>()).Options);
+
+    private string FileOf(string slug) => new SqliteConnectionStringBuilder(ConnectionString(slug)).DataSource;
+
+    public bool Exists(string slug) => File.Exists(FileOf(slug));
+
+    /// <summary>
+    /// Removes a clinic's database file, for a sign-up that failed half-way. Not for a tenant in use: its open
+    /// requests would recreate the file.
+    /// </summary>
+    public void Delete(string slug)
+    {
+        _ready.TryRemove(slug, out _);
+        using (var connection = new SqliteConnection(ConnectionString(slug)))
+            SqliteConnection.ClearPool(connection);
+        var file = FileOf(slug);
+        foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
+            File.Delete(file + suffix);
     }
 
     public async Task<ClinicReportDbContext> OpenAsync(string slug)

@@ -22,7 +22,13 @@ export type Settings = {
   demo: boolean; accountsLocked: boolean; demoUsers: string[]
   /** "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles. */
   signIn: 'local' | 'clinichub'; clinicHubUrl: string | null
+  /** Hosted mode, on the root domain: no clinic here, only sign-up. Clinics are subdomains of baseDomain. */
+  signup?: boolean; baseDomain?: string | null
 }
+
+export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
+export type SignupResult = { slug: string; url: string; trialEndsAt: string }
+export type SlugCheck = { slug: string; available: boolean; problem: string | null }
 
 export type Sex = 'M' | 'F' | 'X' | 'U'
 export type Patient = { id: number; mrn: string; firstName: string; lastName: string; dateOfBirth: string; sex: Sex }
@@ -148,6 +154,8 @@ export const api = {
   overrideOrder: (id: number, reason: string) => request<{ open: boolean }>('POST', `/api/orders/${id}/override`, { reason }),
   overrideReport: (id: number, reason: string) => request<{ open: boolean }>('POST', `/api/reports/${id}/override`, { reason }),
   settings: () => get<Settings>('/api/settings'),
+  checkSlug: (value: string) => get<SlugCheck>(`/api/signup/slug?value=${encodeURIComponent(value)}`),
+  signup: (body: SignupRequest) => request<SignupResult>('POST', '/api/signup', body),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),
   demoLogin: (userName: string) => request<Me>('POST', '/api/auth/demo-login', { userName }),

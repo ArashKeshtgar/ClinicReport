@@ -64,6 +64,13 @@ public static class Tenancy
         return ClinicReportDatabases.IsValidSlug(slug) ? slug : null;
     }
 
+    /// <summary>The base domain itself: the service's own front page, where clinics sign up.</summary>
+    public static bool IsRoot(string host, string baseDomain) => string.Equals(host, baseDomain.Trim('.'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Hosted mode, on the root domain: no tenant, only sign-up.</summary>
+    public static bool OnRootDomain(this HttpContext http) =>
+        http.RequestServices.IsHosted() && http.RequestServices.GetRequiredService<ITenantContext>().Tenant is null;
+
     /// <summary>The clinic's name and letterhead: the tenant's in Hosted mode, otherwise the "Clinic" settings.</summary>
     public static ClinicOptions CurrentClinic(this HttpContext http)
     {
@@ -93,6 +100,19 @@ public static class Tenancy
                 return;
             }
             var hosting = ctx.RequestServices.GetRequiredService<IOptions<HostingOptions>>().Value;
+            if (IsRoot(ctx.Request.Host.Host, hosting.BaseDomain!))
+            {
+                // The root domain serves the web app's sign-up page and the sign-up API; nothing of any tenant.
+                var path = ctx.Request.Path;
+                if (path.StartsWithSegments("/hubs") || (path.StartsWithSegments("/api")
+                    && !path.StartsWithSegments("/api/signup") && !path.StartsWithSegments("/api/settings")))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                await next();
+                return;
+            }
             var slug = SlugOf(ctx.Request.Host.Host, hosting.BaseDomain!);
             var tenant = slug is null ? null : await ctx.RequestServices.GetRequiredService<TenantDirectory>()
                 .FindAsync(slug, ctx.RequestServices.GetRequiredService<CatalogDbContext>(), ctx.RequestAborted);

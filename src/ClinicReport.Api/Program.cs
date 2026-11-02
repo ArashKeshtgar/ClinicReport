@@ -42,12 +42,17 @@ builder.Services.AddClinicAuth(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull);
 
 var loginsPerMinute = builder.Configuration.GetValue("RateLimits:LoginsPerMinute", 10);
+var signupsPerHour = builder.Configuration.GetValue("RateLimits:SignupsPerHour", 5);
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddPolicy(AuthEndpoints.LoginRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = loginsPerMinute, Window = TimeSpan.FromMinutes(1) }));
+    // Hosted: every sign-up creates a database, so a few an hour from one address.
+    o.AddPolicy(SignupEndpoints.SignupRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = signupsPerHour, Window = TimeSpan.FromHours(1) }));
 });
 
 var app = builder.Build();
@@ -88,11 +93,14 @@ app.UseCsrfHeaderCheck();
 
 app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub) =>
 {
-    // Hosted: the tenant of the host. Otherwise the "Clinic" settings.
-    var clinic = http.CurrentClinic();
+    // Hosted: the tenant of the host, or on the root domain the service's sign-up. Otherwise the "Clinic" settings.
+    var signup = http.OnRootDomain();
+    var clinic = signup ? new ClinicOptions() : http.CurrentClinic();
     return new
     {
         clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,
+        Signup = signup,
+        BaseDomain = signup ? http.Request.Host.Value : null,
         Demo = demo.Value.Enabled && !hub.Value.Enabled,
         AccountsLocked = demo.Value.Enabled && demo.Value.LockAccounts,
         DemoUsers = demo.Value.Enabled && !hub.Value.Enabled ? DemoSeeder.DemoUserNames : [],
@@ -104,6 +112,7 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
 
 app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 
+app.MapSignupEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapPatientEndpoints();

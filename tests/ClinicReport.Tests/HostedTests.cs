@@ -23,6 +23,8 @@ public class HostedFactory : ApiFactory
 
     public string DatabaseOf(string slug) => Path.Combine(_dir, $"clinicreport-{slug}.db");
 
+    protected virtual int SignupsPerHour => 1000;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -30,6 +32,15 @@ public class HostedFactory : ApiFactory
         builder.UseSetting("Hosting:BaseDomain", BaseDomain);
         builder.UseSetting("Hosting:CatalogConnection", $"Data Source={Path.Combine(_dir, "catalog.db")}");
         builder.UseSetting("Hosting:DatabasePattern", $"Data Source={Path.Combine(_dir, "clinicreport-{clinic}.db")}");
+        builder.UseSetting("RateLimits:SignupsPerHour", SignupsPerHour.ToString());
+    }
+
+    /// <summary>The service's own front page, where clinics sign up.</summary>
+    public HttpClient RootClient()
+    {
+        var client = CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri($"http://{BaseDomain}") });
+        client.DefaultRequestHeaders.Add(AuthSetup.CsrfHeader, "1");
+        return client;
     }
 
     public async Task AddTenantAsync(string slug, string status = TenantStatus.Active)
