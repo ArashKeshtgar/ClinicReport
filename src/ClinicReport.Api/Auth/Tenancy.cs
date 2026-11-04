@@ -136,7 +136,7 @@ public static class Tenancy
     /// <summary>
     /// After authentication: a session belongs to the tenant it was signed in at. Every tenant's cookie is
     /// readable by the same keys, so one carried to another subdomain is refused here (401). A suspended
-    /// tenant gets no changes, apart from signing in and out.
+    /// tenant gets no changes, apart from signing in and out and paying, the way out of being suspended.
     /// </summary>
     public static IApplicationBuilder UseTenantGate(this IApplicationBuilder app)
     {
@@ -158,7 +158,8 @@ public static class Tenancy
             }
             var method = ctx.Request.Method;
             var unsafeMethod = !(HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method));
-            if (tenant.ReadOnly && unsafeMethod && ctx.Request.Path.StartsWithSegments("/api") && !ctx.Request.Path.StartsWithSegments("/api/auth"))
+            if (tenant.ReadOnly && unsafeMethod && ctx.Request.Path.StartsWithSegments("/api")
+                && !ctx.Request.Path.StartsWithSegments("/api/auth") && !ctx.Request.Path.StartsWithSegments("/api/billing"))
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await ctx.Response.WriteAsJsonAsync(new { title = "This clinic's account is suspended. Reports can be read and exported, not changed." });

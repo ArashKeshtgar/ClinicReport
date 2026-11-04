@@ -34,6 +34,13 @@ export type OnboardingStep = { key: 'email' | 'letterhead' | 'template' | 'invit
 export type Onboarding = { steps: OnboardingStep[]; complete: boolean }
 export type ClinicLetterhead = { name: string; address: string | null; phone: string | null; reportFooter: string | null }
 
+export type Meter = { used: number; limit?: number | null }
+export type BillingStatus = {
+  plan: string; status: string; onTrial: boolean; trialEndsAt: string | null
+  users: Meter; services: Meter; signedReports: Meter
+  configured: boolean; canUpgrade: boolean; canManage: boolean
+}
+
 export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
 export type SignupResult = { slug: string; url: string; trialEndsAt: string; emailSent: boolean }
 export type SlugCheck = { slug: string; available: boolean; problem: string | null }
@@ -167,6 +174,9 @@ export const api = {
   verifyEmail: (token: string) => request<{ verified: boolean }>('POST', '/api/auth/verify-email', { token }),
   onboarding: () => get<Onboarding>('/api/clinic/onboarding'),
   saveClinic: (body: ClinicLetterhead) => request<void>('PUT', '/api/clinic', body),
+  billing: () => get<BillingStatus>('/api/billing'),
+  startCheckout: () => request<{ url: string }>('POST', '/api/billing/checkout'),
+  openBillingPortal: () => request<{ url: string }>('POST', '/api/billing/portal'),
   resendVerification: () => request<{ sent: boolean; verified: boolean }>('POST', '/api/auth/verify-email/resend'),
   me: () => get<Me | undefined>('/api/auth/me'),
   login: (userName: string, password: string, code?: string) => request<Me>('POST', '/api/auth/login', { userName, password, code: code || null }),

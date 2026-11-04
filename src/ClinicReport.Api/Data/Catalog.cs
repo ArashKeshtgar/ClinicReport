@@ -150,6 +150,9 @@ public static class CatalogSetup
         services.AddTenancy();
         services.Configure<MailOptions>(config.GetSection("Mail"));
         services.AddSingleton<IMailSender, SmtpMailSender>();
+        services.Configure<StripeOptions>(config.GetSection("Stripe"));
+        config.GetSection("Stripe").Get<StripeOptions>()?.EnsureTestKey();
+        services.AddSingleton<IBillingGateway, StripeBillingGateway>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.
         services.AddSingleton<ClinicReportDatabases>();
         services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(

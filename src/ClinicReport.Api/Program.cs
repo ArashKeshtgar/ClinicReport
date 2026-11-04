@@ -118,6 +118,7 @@ app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 
 app.MapSignupEndpoints();
 app.MapClinicEndpoints();
+app.MapBillingEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapPatientEndpoints();

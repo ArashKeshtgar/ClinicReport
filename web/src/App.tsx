@@ -5,6 +5,7 @@ import Login, { ClinicHubSignIn } from './pages/Login'
 import Signup from './pages/Signup'
 import VerifyEmail, { VerifyEmailBanner } from './pages/VerifyEmail'
 import Clinic from './pages/Clinic'
+import Billing from './pages/Billing'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -87,6 +88,7 @@ export default function App() {
           <Route path="/audit" element={can(me, 'audit.view') ? <Audit /> : <Navigate to="/" />} />
           <Route path="/account" element={<Account />} />
           <Route path="/clinic" element={settings.hosted && can(me, 'users.manage') ? <Clinic /> : <Navigate to="/" />} />
+          <Route path="/billing" element={settings.hosted && can(me, 'users.manage') ? <Billing /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -110,6 +112,7 @@ function TopBar() {
         {can(me, 'users.manage') && <NavLink to="/users">{settings.signIn === 'clinichub' ? 'Users' : <>Users &amp; roles</>}</NavLink>}
         {can(me, 'audit.view') && <NavLink to="/audit">Audit log</NavLink>}
         {settings.hosted && can(me, 'users.manage') && <NavLink to="/clinic">Clinic</NavLink>}
+        {settings.hosted && can(me, 'users.manage') && <NavLink to="/billing">Billing</NavLink>}
       </nav>
       <div className="who">
         <ThemeToggle />

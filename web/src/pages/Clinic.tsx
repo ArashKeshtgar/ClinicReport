@@ -65,7 +65,7 @@ export default function Clinic() {
   return (
     <>
       <div className="page-head"><h1>Clinic</h1></div>
-      <form className="card stack narrow-card" onSubmit={submit}>
+      <form className="card pad stack narrow-card" onSubmit={submit}>
         <p className="muted small">Printed at the top and bottom of every report.</p>
         <label>Name<input value={name} onChange={e => setName(e.target.value)} required maxLength={200} /></label>
         <label>Address<input value={address} onChange={e => setAddress(e.target.value)} maxLength={500} /></label>

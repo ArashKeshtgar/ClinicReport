@@ -177,7 +177,7 @@ dotnet run --project src/ClinicReport.Api --launch-profile connected   # with Cl
 
 Work in progress: the multi-tenant service. With `Hosting__Mode=Hosted` one ClinicReport serves many clinics, each
 at its own subdomain (`north.clinicreport.example.com`, under `Hosting__BaseDomain`) with its own accounts. ClinicHub's
-sign-in is not used in this mode. Sign-up and billing are not built yet; tenants are added to the catalog by hand.
+sign-in is not used in this mode.
 
 - **A catalog of tenants** (`Hosting__CatalogConnection`, `catalog.db`): each clinic's slug, name, status and
   letterhead. It holds no health information.
@@ -185,6 +185,11 @@ sign-in is not used in this mode. Sign-up and billing are not built yet; tenants
   templates at the tenant's first request. The host decides the tenant; a session signed in at one subdomain is
   refused at another (401). A suspended tenant can sign in, read and export, but not change anything (403). An
   unknown or cancelled one is not found (404).
+- **Plans.** A sign-up starts a 14-day trial with Pro's limits, then falls to Free: 3 active users, 2 services and 50
+  signed reports a month. A full limit answers 402 and stops growth only; nobody already there is locked out. Billing
+  uses Stripe in test mode only (`Stripe__SecretKey`, which must be `sk_test_...`, and `Stripe__ProPriceId`, from
+  `/run/secrets`). Without them the service runs and the billing page says it is not set up. This project takes no
+  real payments.
 - **Upgrades.** `dotnet ClinicReport.Api.dll --migrate-all` migrates every tenant's database, one after another. A
   tenant that fails is logged and the others carry on; the exit code is 1 if any failed.
 
