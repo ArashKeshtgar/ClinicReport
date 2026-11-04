@@ -5,6 +5,7 @@ import { api, ApiError, type BillingStatus, type Meter } from '../api'
 const STATUS_NOTES: Record<string, string> = {
   PastDue: 'The last payment failed. Update the card to keep the clinic running.',
   Suspended: 'This clinic is suspended: reports can be read and exported, not changed. Update the card to restore it.',
+  Cancelled: 'The subscription has ended: for 30 days reports can be read and exported, not changed. Subscribe again to carry on.',
 }
 
 function Usage({ label, meter }: { label: string; meter: Meter }) {

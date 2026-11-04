@@ -187,9 +187,13 @@ sign-in is not used in this mode.
   unknown or cancelled one is not found (404).
 - **Plans.** A sign-up starts a 14-day trial with Pro's limits, then falls to Free: 3 active users, 2 services and 50
   signed reports a month. A full limit answers 402 and stops growth only; nobody already there is locked out. Billing
-  uses Stripe in test mode only (`Stripe__SecretKey`, which must be `sk_test_...`, and `Stripe__ProPriceId`, from
-  `/run/secrets`). Without them the service runs and the billing page says it is not set up. This project takes no
-  real payments.
+  uses Stripe in test mode only (`Stripe__SecretKey`, which must be `sk_test_...`, `Stripe__ProPriceId` and
+  `Stripe__WebhookSecret`, from `/run/secrets`). Without them the service runs and the billing page says it is not set
+  up. This project takes no real payments.
+- **Stripe's webhook** is `POST /api/billing/stripe` at the root domain, the only thing that changes a plan. Stripe
+  signs each event and may repeat or reorder them, so the signature is checked, an event already processed does
+  nothing, and neither does one older than the last applied. When a subscription ends the clinic is read-only for 30
+  days, to export or subscribe again; after that its subdomain is not found.
 - **Upgrades.** `dotnet ClinicReport.Api.dll --migrate-all` migrates every tenant's database, one after another. A
   tenant that fails is logged and the others carry on; the exit code is 1 if any failed.
 

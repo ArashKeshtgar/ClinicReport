@@ -57,7 +57,20 @@ public class Tenant
     public DateTime CreatedAt { get; set; }
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
+
+    /// <summary>When the first failed payment put the clinic past due; the grace period runs from here.</summary>
+    public DateTime? PastDueSince { get; set; }
+
+    /// <summary>When the subscription ended. Null for a tenant the operator cancelled, which is gone at once.</summary>
+    public DateTime? CancelledAt { get; set; }
+
+    /// <summary>The newest Stripe event applied, as Stripe doesn't deliver them in order.</summary>
+    public DateTime? LastStripeEventAt { get; set; }
+
     public TenantSettings? Settings { get; set; }
+
+    /// <summary>How long a clinic whose subscription ended can still sign in, read and export.</summary>
+    public const int ExportDays = 30;
 
     /// <summary>Who signed the clinic up. Null for a tenant added by the operator, which has nothing to confirm.</summary>
     public string? OwnerEmail { get; set; }
@@ -69,6 +82,9 @@ public class Tenant
 
     /// <summary>Signed up but the email is not confirmed yet: no reports can be started.</summary>
     public bool AwaitingEmailVerification => OwnerEmail is not null && EmailVerifiedAt is null;
+
+    /// <summary>Cancelled, and its time to export is over: the subdomain no longer answers.</summary>
+    public bool Gone(DateTime now) => Status == TenantStatus.Cancelled && (CancelledAt is null || now >= CancelledAt.Value.AddDays(ExportDays));
 
     /// <summary>The plan that applies now: a trial is Pro until it ends, then Free. A trial with no end date was set up by the operator.</summary>
     public string EffectivePlan(DateTime now) => Plan switch
@@ -89,9 +105,18 @@ public class TenantSettings
     public string? LogoPath { get; set; }
 }
 
+/// <summary>A Stripe event already handled: Stripe delivers at least once, so the same one can come again.</summary>
+public class ProcessedStripeEvent
+{
+    public string Id { get; set; } = "";
+    public string Type { get; set; } = "";
+    public DateTime ProcessedAt { get; set; }
+}
+
 public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbContext(options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<TenantSettings> TenantSettings => Set<TenantSettings>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -105,10 +130,17 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             e.HasIndex(t => t.Status);
             e.Property(t => t.Plan).HasMaxLength(40);
             e.Property(t => t.StripeCustomerId).HasMaxLength(100);
+            e.HasIndex(t => t.StripeCustomerId);
             e.Property(t => t.StripeSubscriptionId).HasMaxLength(100);
             e.Property(t => t.OwnerEmail).HasMaxLength(64);
             e.Property(t => t.EmailTokenHash).HasMaxLength(64);
             e.HasOne(t => t.Settings).WithOne().HasForeignKey<TenantSettings>(s => s.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ProcessedStripeEvent>(e =>
+        {
+            e.Property(p => p.Id).HasMaxLength(100);
+            e.Property(p => p.Type).HasMaxLength(100);
         });
 
         b.Entity<TenantSettings>(e =>
@@ -153,6 +185,7 @@ public static class CatalogSetup
         services.Configure<StripeOptions>(config.GetSection("Stripe"));
         config.GetSection("Stripe").Get<StripeOptions>()?.EnsureTestKey();
         services.AddSingleton<IBillingGateway, StripeBillingGateway>();
+        services.AddScoped<StripeEvents>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.
         services.AddSingleton<ClinicReportDatabases>();
         services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(

@@ -11,14 +11,14 @@ public interface ITenantContext
 {
     Tenant? Tenant { get; }
 
-    /// <summary>A suspended tenant can still sign in, read and export, but not change anything.</summary>
+    /// <summary>A suspended tenant, or a cancelled one in its time to export, can still sign in, read and export, but not change anything.</summary>
     bool ReadOnly { get; }
 }
 
 internal sealed class TenantContext : ITenantContext
 {
     public Tenant? Tenant { get; set; }
-    public bool ReadOnly => Tenant?.Status == TenantStatus.Suspended;
+    public bool ReadOnly => Tenant?.Status is TenantStatus.Suspended or TenantStatus.Cancelled;
 }
 
 /// <summary>
@@ -69,6 +69,9 @@ public static class Tenancy
         path.Equals("/api/reports") || path.Equals("/api/reports/")
         || (path.StartsWithSegments("/api/orders") && path.Value!.EndsWith("/start", StringComparison.Ordinal));
 
+    /// <summary>Where Stripe calls: at the root domain, as one webhook serves every tenant.</summary>
+    public const string StripeWebhookPath = "/api/billing/stripe";
+
     /// <summary>The base domain itself: the service's own front page, where clinics sign up.</summary>
     public static bool IsRoot(string host, string baseDomain) => string.Equals(host, baseDomain.Trim('.'), StringComparison.OrdinalIgnoreCase);
 
@@ -90,7 +93,7 @@ public static class Tenancy
     }
 
     /// <summary>
-    /// Before authentication: an unknown or cancelled tenant gets 404 for everything but /healthz, so a guessed
+    /// Before authentication: an unknown or gone tenant gets 404 for everything but /healthz, so a guessed
     /// subdomain learns nothing. The sign-in cookie needs no Domain: without one it is sent to its own host only.
     /// </summary>
     public static IApplicationBuilder UseTenantResolution(this IApplicationBuilder app)
@@ -110,7 +113,7 @@ public static class Tenancy
                 // The root domain serves the web app's sign-up page and the sign-up API; nothing of any tenant.
                 var path = ctx.Request.Path;
                 if (path.StartsWithSegments("/hubs") || (path.StartsWithSegments("/api")
-                    && !path.StartsWithSegments("/api/signup") && !path.StartsWithSegments("/api/settings")))
+                    && !path.StartsWithSegments("/api/signup") && !path.StartsWithSegments("/api/settings") && !path.StartsWithSegments(StripeWebhookPath)))
                 {
                     ctx.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;
@@ -121,7 +124,7 @@ public static class Tenancy
             var slug = SlugOf(ctx.Request.Host.Host, hosting.BaseDomain!);
             var tenant = slug is null ? null : await ctx.RequestServices.GetRequiredService<TenantDirectory>()
                 .FindAsync(slug, ctx.RequestServices.GetRequiredService<CatalogDbContext>(), ctx.RequestAborted);
-            if (tenant is null || tenant.Status == TenantStatus.Cancelled)
+            if (tenant is null || tenant.Gone(ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime))
             {
                 ctx.Response.StatusCode = StatusCodes.Status404NotFound;
                 return;
@@ -162,7 +165,8 @@ public static class Tenancy
                 && !ctx.Request.Path.StartsWithSegments("/api/auth") && !ctx.Request.Path.StartsWithSegments("/api/billing"))
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await ctx.Response.WriteAsJsonAsync(new { title = "This clinic's account is suspended. Reports can be read and exported, not changed." });
+                var why = tenant.Tenant.Status == TenantStatus.Cancelled ? "subscription has ended" : "account is suspended";
+                await ctx.Response.WriteAsJsonAsync(new { title = $"This clinic's {why}. Reports can be read and exported, not changed." });
                 return;
             }
             if (tenant.Tenant.AwaitingEmailVerification && HttpMethods.IsPost(method) && StartsReport(ctx.Request.Path))

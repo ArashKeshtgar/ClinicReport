@@ -174,7 +174,9 @@ public static class AuthSetup
     public static IApplicationBuilder UseCsrfHeaderCheck(this IApplicationBuilder app) => app.Use(async (ctx, next) =>
     {
         var unsafeMethod = !(HttpMethods.IsGet(ctx.Request.Method) || HttpMethods.IsHead(ctx.Request.Method) || HttpMethods.IsOptions(ctx.Request.Method));
-        if (unsafeMethod && ctx.Request.Path.StartsWithSegments("/api") && !ctx.Request.Headers.ContainsKey(CsrfHeader))
+        // Stripe's webhook has no cookie to protect: its signature is what is checked.
+        if (unsafeMethod && ctx.Request.Path.StartsWithSegments("/api") && !ctx.Request.Path.StartsWithSegments(Tenancy.StripeWebhookPath)
+            && !ctx.Request.Headers.ContainsKey(CsrfHeader))
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
             await ctx.Response.WriteAsJsonAsync(new { title = $"Missing {CsrfHeader} header." });

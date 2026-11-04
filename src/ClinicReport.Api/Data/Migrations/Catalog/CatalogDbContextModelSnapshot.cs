@@ -17,11 +17,33 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("ClinicReport.Api.Data.ProcessedStripeEvent", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProcessedStripeEvents");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.Tenant", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
@@ -36,6 +58,9 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                     b.Property<DateTime?>("EmailVerifiedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LastStripeEventAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -43,6 +68,9 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
 
                     b.Property<string>("OwnerEmail")
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PastDueSince")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Plan")
@@ -77,6 +105,8 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                         .IsUnique();
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("StripeCustomerId");
 
                     b.ToTable("Tenants");
                 });

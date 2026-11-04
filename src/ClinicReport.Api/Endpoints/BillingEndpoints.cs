@@ -2,6 +2,7 @@ using ClinicReport.Api.Auth;
 using ClinicReport.Api.Data;
 using ClinicReport.Api.Reports;
 using Microsoft.Extensions.Options;
+using Stripe;
 
 namespace ClinicReport.Api.Endpoints;
 
@@ -22,6 +23,32 @@ public static class BillingEndpoints
         if (!app.ServiceProvider.IsHosted())
             return;
         var admin = app.MapGroup("/api/billing").WithTags("Billing").RequireAuthorization(Permissions.UsersManage);
+
+        // A bad signature is a 400 and a failure a 500, which Stripe retries; 200 means done, or nothing to do.
+        app.MapPost(Tenancy.StripeWebhookPath, async (HttpContext http, StripeEvents events, IOptions<StripeOptions> stripe, CancellationToken ct) =>
+        {
+            if (!http.OnRootDomain())
+                return Results.NotFound();
+            if (string.IsNullOrEmpty(stripe.Value.WebhookSecret))
+                throw new ReportRuleException("Billing is not set up on this server.", StatusCodes.Status503ServiceUnavailable);
+            if (http.Request.Headers["Stripe-Signature"].ToString() is not { Length: > 0 } signature)
+                return Results.BadRequest();
+            // The exact bytes Stripe signed, so read before anything parses them.
+            using var reader = new StreamReader(http.Request.Body);
+            var payload = await reader.ReadToEndAsync(ct);
+            Event stripeEvent;
+            try
+            {
+                // The webhook endpoint's API version is set at Stripe and need not be this library's.
+                stripeEvent = EventUtility.ConstructEvent(payload, signature, stripe.Value.WebhookSecret, throwOnApiVersionMismatch: false);
+            }
+            catch (StripeException)
+            {
+                return Results.BadRequest();
+            }
+            await events.ApplyAsync(stripeEvent, ct);
+            return Results.Ok();
+        }).AllowAnonymous().WithTags("Billing");
 
         admin.MapGet("/", async (ITenantContext current, PlanLimits limits, TimeProvider clock, IOptions<StripeOptions> stripe, CancellationToken ct) =>
         {
