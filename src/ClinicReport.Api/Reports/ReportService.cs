@@ -33,7 +33,7 @@ public class ReportRuleException(string message, int status = StatusCodes.Status
 /// changed what, saves with optimistic concurrency (two people typing at once never lose each other's
 /// fields), and pushes the new state to everyone who has the report open.
 /// </summary>
-public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub, IHttpContextAccessor http)
+public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub, IHttpContextAccessor http, PlanLimits limits)
 {
     private const int MaxTextLength = 4000;
     private const int MaxSaveAttempts = 5;
@@ -139,6 +139,7 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
     /// </summary>
     public async Task<ReportDto> SignAsync(int id, int userId, string? clientId, CancellationToken ct)
     {
+        await limits.EnsureCanSignReport(ct);
         var order = await db.ReportOrders.AsNoTracking().FirstOrDefaultAsync(o => o.ReportId == id, ct);
         var signer = order is null ? null : await db.Users.FindAsync([userId], ct);
         return await MutateAsync(id, userId, clientId, ct, (r, log) =>

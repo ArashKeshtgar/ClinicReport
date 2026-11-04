@@ -36,6 +36,13 @@ public static class TenantStatus
     public const string Cancelled = "Cancelled";
 }
 
+public static class Plans
+{
+    public const string Trial = "Trial";
+    public const string Free = "Free";
+    public const string Pro = "Pro";
+}
+
 /// <summary>A clinic that uses the hosted service. Its data lives in its own database, named by <see cref="Slug"/>.</summary>
 public class Tenant
 {
@@ -45,7 +52,7 @@ public class Tenant
     public string Slug { get; set; } = "";
     public string Name { get; set; } = "";
     public string Status { get; set; } = TenantStatus.Trial;
-    public string Plan { get; set; } = "Trial";
+    public string Plan { get; set; } = Plans.Trial;
     public DateTime? TrialEndsAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? StripeCustomerId { get; set; }
@@ -62,6 +69,14 @@ public class Tenant
 
     /// <summary>Signed up but the email is not confirmed yet: no reports can be started.</summary>
     public bool AwaitingEmailVerification => OwnerEmail is not null && EmailVerifiedAt is null;
+
+    /// <summary>The plan that applies now: a trial is Pro until it ends, then Free. A trial with no end date was set up by the operator.</summary>
+    public string EffectivePlan(DateTime now) => Plan switch
+    {
+        Plans.Pro => Plans.Pro,
+        Plans.Trial when TrialEndsAt is null || now < TrialEndsAt => Plans.Pro,
+        _ => Plans.Free,
+    };
 }
 
 /// <summary>What a tenant prints on its reports. In standalone and connected mode this comes from the "Clinic" settings.</summary>

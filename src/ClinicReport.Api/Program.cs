@@ -28,6 +28,7 @@ builder.Services.Configure<ClinicOptions>(builder.Configuration.GetSection("Clin
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<PresenceTracker>();
+builder.Services.AddScoped<PlanLimits>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SecurityLog>();
 builder.Services.AddMemoryCache();

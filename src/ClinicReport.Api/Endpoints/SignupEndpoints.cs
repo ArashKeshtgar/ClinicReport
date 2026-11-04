@@ -88,7 +88,7 @@ public static class SignupEndpoints
             var now = clock.GetUtcNow().UtcDateTime;
             var tenant = new Tenant
             {
-                Slug = slug, Name = name, Status = TenantStatus.Trial, Plan = "Trial", TrialEndsAt = now + TrialLength,
+                Slug = slug, Name = name, Status = TenantStatus.Trial, Plan = Plans.Trial, TrialEndsAt = now + TrialLength,
                 CreatedAt = now, Settings = new TenantSettings(), OwnerEmail = email,
             };
             var token = EmailVerification.NewToken(tenant, now);

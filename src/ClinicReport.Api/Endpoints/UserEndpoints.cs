@@ -52,7 +52,7 @@ public static class UserEndpoints
             return users.Select(u => ToDto(u, now));
         });
 
-        admin.MapPost("/users", async (CreateUser req, ClaimsPrincipal me, ClinicReportDbContext db, IPasswordHasher<AppUser> hasher, SecurityLog log, TimeProvider clock) =>
+        admin.MapPost("/users", async (CreateUser req, ClaimsPrincipal me, ClinicReportDbContext db, IPasswordHasher<AppUser> hasher, SecurityLog log, TimeProvider clock, PlanLimits limits) =>
         {
             var errors = new Dictionary<string, string[]>();
             var userName = req.UserName?.Trim() ?? "";
@@ -65,6 +65,7 @@ public static class UserEndpoints
                 errors["password"] = [p];
             if (errors.Count > 0)
                 return Results.ValidationProblem(errors);
+            await limits.EnsureCanAddUser();
 
             var now = clock.GetUtcNow().UtcDateTime;
             var user = new AppUser
@@ -84,11 +85,13 @@ public static class UserEndpoints
             return Results.Created($"/api/users/{user.Id}", ToDto(created!, now));
         }).AddEndpointFilter(AuthEndpoints.LocalAccountsOnly);
 
-        admin.MapPut("/users/{id:int}", async (int id, UpdateUser req, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log, TimeProvider clock) =>
+        admin.MapPut("/users/{id:int}", async (int id, UpdateUser req, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log, TimeProvider clock, PlanLimits limits) =>
         {
             var user = await LoadAsync(db, id, tracked: true);
             if (user is null)
                 return Results.NotFound();
+            if (req.IsActive && !user.IsActive)
+                await limits.EnsureCanAddUser();
             if (user.ExternalId is not null)
             {
                 // Signs in through ClinicHub: name and roles are ClinicHub's; here, the services and whether they may use ClinicReport.

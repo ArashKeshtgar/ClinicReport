@@ -110,7 +110,7 @@ public static class TemplateEndpoints
             return Results.NoContent();
         });
 
-        admin.MapPost("/{id:int}/publish", async (int id, ClaimsPrincipal user, ClinicReportDbContext db, TimeProvider clock) =>
+        admin.MapPost("/{id:int}/publish", async (int id, ClaimsPrincipal user, ClinicReportDbContext db, TimeProvider clock, PlanLimits limits) =>
         {
             var t = await db.Templates.Include(t => t.Versions).SingleOrDefaultAsync(t => t.Id == id);
             var draft = t?.Versions.FirstOrDefault(v => v.Status == TemplateStatus.Draft);
@@ -121,6 +121,7 @@ public static class TemplateEndpoints
                 return Results.Problem(string.Join("\n", errors), title: "Fix the template before publishing.", statusCode: StatusCodes.Status422UnprocessableEntity);
 
             var def = TemplateDefinition.Parse(draft.DefinitionJson);
+            await limits.EnsureCanPublishTemplate(id, def.Service);
             draft.Status = TemplateStatus.Published;
             draft.PublishedAt = clock.GetUtcNow().UtcDateTime;
             draft.PublishedByUserId = user.RequiredUserId();
@@ -130,11 +131,13 @@ public static class TemplateEndpoints
             return Results.Ok(await LoadDetail(db, id));
         });
 
-        admin.MapPut("/{id:int}/active", async (int id, ActiveBody body, ClinicReportDbContext db) =>
+        admin.MapPut("/{id:int}/active", async (int id, ActiveBody body, ClinicReportDbContext db, PlanLimits limits) =>
         {
             var t = await db.Templates.FindAsync(id);
             if (t is null)
                 return Results.NotFound();
+            if (body.IsActive && !t.IsActive)
+                await limits.EnsureCanPublishTemplate(id, t.Service);
             t.IsActive = body.IsActive;
             await db.SaveChangesAsync();
             return Results.NoContent();
