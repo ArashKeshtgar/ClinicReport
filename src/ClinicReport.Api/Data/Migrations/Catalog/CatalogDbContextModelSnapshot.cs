@@ -51,6 +51,12 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("DatabaseFailed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("EmailTokenExpiresAt")
                         .HasColumnType("TEXT");
 
@@ -141,6 +147,56 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                     b.HasKey("TenantId");
 
                     b.ToTable("TenantSettings");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.UsageEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("TenantId", "Kind", "At");
+
+                    b.ToTable("UsageEvents");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.UsageMonth", b =>
+                {
+                    b.Property<int>("TenantId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Month")
+                        .HasMaxLength(7)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("TenantId", "Month", "Kind");
+
+                    b.ToTable("UsageMonths");
                 });
 
             modelBuilder.Entity("ClinicReport.Api.Data.TenantSettings", b =>

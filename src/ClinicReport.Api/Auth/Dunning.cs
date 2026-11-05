@@ -75,38 +75,8 @@ public sealed class Dunning(CatalogDbContext catalog, TenantDirectory directory,
 }
 
 /// <summary>Runs <see cref="Dunning"/> at start-up and every hour, so a restart doesn't put a suspension off.</summary>
-public sealed class DunningService(IServiceScopeFactory scopes, TimeProvider clock, ILogger<DunningService> logger) : BackgroundService
+public sealed class DunningService(IServiceScopeFactory scopes, TimeProvider clock, ILogger<DunningService> logger)
+    : PeriodicJobService(scopes, clock, logger, TimeSpan.FromHours(1))
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(Interval, clock);
-        do
-        {
-            try
-            {
-                using var scope = scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<Dunning>().RunAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // A failure here must not stop the service; the next hour tries again.
-                logger.LogError(ex, "Dunning pass failed");
-            }
-        }
-        while (await WaitAsync(timer, stoppingToken));
-    }
-
-    private static async Task<bool> WaitAsync(PeriodicTimer timer, CancellationToken ct)
-    {
-        try
-        {
-            return await timer.WaitForNextTickAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-    }
+    protected override Task RunAsync(IServiceProvider services, CancellationToken ct) => services.GetRequiredService<Dunning>().RunAsync(ct);
 }

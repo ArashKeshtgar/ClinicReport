@@ -143,7 +143,7 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
         await limits.EnsureCanSignReport(ct);
         var order = await db.ReportOrders.AsNoTracking().FirstOrDefaultAsync(o => o.ReportId == id, ct);
         var signer = order is null ? null : await db.Users.FindAsync([userId], ct);
-        return await MutateAsync(id, userId, clientId, ct, (r, log) =>
+        var signed = await MutateAsync(id, userId, clientId, ct, (r, log) =>
         {
             var rendered = ReportRenderer.Render(
                 TemplateDefinition.Parse(r.TemplateVersion.DefinitionJson), ReportValues.FromJson(r.ValuesJson), ContextFor(r));
@@ -167,6 +167,8 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
                 ResultMessages.Enqueue(db, order, r, "final", [], clinicHub.Value.PublicUrl, r.SignedAt.Value);
             }
         });
+        await limits.NoteReportSignedAsync(ct);
+        return signed;
     }
 
     public async Task<ReportDto> AddAddendumAsync(int id, string text, int userId, CancellationToken ct)

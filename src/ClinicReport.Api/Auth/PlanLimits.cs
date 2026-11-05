@@ -11,7 +11,7 @@ public record PlanUsage(int ActiveUsers, int Services, int SignedThisMonth);
 /// Limits stop growth only: after a downgrade, everyone and everything the clinic already has keeps working.
 /// Outside Hosted mode there is no tenant and nothing is limited.
 /// </summary>
-public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITenantContext? current = null, SeatChanges? seatChanges = null)
+public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITenantContext? current = null, SeatChanges? seatChanges = null, UsageMeter? usage = null)
 {
     public const int FreeUsers = 3;
     public const int FreeServices = 2;
@@ -30,6 +30,9 @@ public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITe
         if (current?.Tenant is { StripeSubscriptionId: not null } tenant)
             seatChanges?.Note(tenant.Slug);
     }
+
+    /// <summary>After a report was signed: the usage, counted where the limit is.</summary>
+    public Task NoteReportSignedAsync(CancellationToken ct = default) => usage?.RecordAsync(UsageKinds.ReportSigned, ct: ct) ?? Task.CompletedTask;
 
     private Task<int> SignedThisMonthAsync(CancellationToken ct)
     {

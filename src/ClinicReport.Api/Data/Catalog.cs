@@ -68,11 +68,17 @@ public class Tenant
     /// </summary>
     public DateTime? PastDueSince { get; set; }
 
+    /// <summary>The last nightly pass could not open the clinic's database.</summary>
+    public bool DatabaseFailed { get; set; }
+
     /// <summary>When the owner was told about the failed payment. Null until the mail has gone out, so it is tried again.</summary>
     public DateTime? PastDueNoticeAt { get; set; }
 
     /// <summary>When the subscription ended. Null for a tenant the operator cancelled, which is gone at once.</summary>
     public DateTime? CancelledAt { get; set; }
+
+    /// <summary>When the clinic's database was removed. The row stays, so the slug is never reused and the record remains.</summary>
+    public DateTime? DeletedAt { get; set; }
 
     /// <summary>The newest Stripe event applied, as Stripe doesn't deliver them in order.</summary>
     public DateTime? LastStripeEventAt { get; set; }
@@ -126,6 +132,36 @@ public class TenantSettings
     public string? LogoPath { get; set; }
 }
 
+public static class UsageKinds
+{
+    public const string ReportSigned = "ReportSigned";
+    public const string AiCall = "AiCall";
+    public const string ActiveUser = "ActiveUser";
+}
+
+/// <summary>Something a clinic used. Counts only: never a patient, a report or a user.</summary>
+public class UsageEvent
+{
+    public long Id { get; set; }
+    public int TenantId { get; set; }
+    public string Kind { get; set; } = "";
+    public DateTime At { get; set; }
+    public int Quantity { get; set; }
+}
+
+/// <summary>A month's usage of one kind, added up from <see cref="UsageEvent"/> by the nightly job.</summary>
+public class UsageMonth
+{
+    public int TenantId { get; set; }
+
+    /// <summary>yyyy-MM, UTC.</summary>
+    public string Month { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public int Quantity { get; set; }
+
+    public static string Key(DateTime at) => at.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+}
+
 /// <summary>A Stripe event already handled: Stripe delivers at least once, so the same one can come again.</summary>
 public class ProcessedStripeEvent
 {
@@ -138,6 +174,8 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
+    public DbSet<UsageEvent> UsageEvents => Set<UsageEvent>();
+    public DbSet<UsageMonth> UsageMonths => Set<UsageMonth>();
     public DbSet<TenantSettings> TenantSettings => Set<TenantSettings>();
 
     /// <summary>SQLite keeps no time zone, so dates would come back unmarked and browsers would read them as local time.</summary>
@@ -165,6 +203,20 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             e.Property(t => t.OwnerEmail).HasMaxLength(64);
             e.Property(t => t.EmailTokenHash).HasMaxLength(64);
             e.HasOne(t => t.Settings).WithOne().HasForeignKey<TenantSettings>(s => s.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<UsageEvent>(e =>
+        {
+            e.Property(u => u.Kind).HasMaxLength(20);
+            e.HasIndex(u => new { u.TenantId, u.Kind, u.At });
+            e.HasIndex(u => u.At);
+        });
+
+        b.Entity<UsageMonth>(e =>
+        {
+            e.HasKey(m => new { m.TenantId, m.Month, m.Kind });
+            e.Property(m => m.Month).HasMaxLength(7);
+            e.Property(m => m.Kind).HasMaxLength(20);
         });
 
         b.Entity<ProcessedStripeEvent>(e =>
@@ -219,6 +271,9 @@ public static class CatalogSetup
         services.AddSingleton<SeatChanges>();
         services.AddScoped<SeatSync>();
         services.AddHostedService<SeatSyncService>();
+        services.AddScoped<UsageMeter>();
+        services.AddScoped<UsageRollup>();
+        services.AddHostedService<UsageRollupService>();
         services.AddScoped<Dunning>();
         services.AddHostedService<DunningService>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.
