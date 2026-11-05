@@ -65,6 +65,51 @@ public class DunningTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_owner_is_told_once_about_a_failed_payment_and_again_when_it_turns_read_only()
+    {
+        await PastDueAsync("north", TimeSpan.FromDays(1));
+        await ChangeTenantAsync("north", t => t.OwnerEmail = "owner@north.example.com");
+        using (var scope = _factory.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<Dunning>().RunAsync();
+        using (var scope = _factory.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<Dunning>().RunAsync();
+
+        Assert.Single(_factory.Mail.Sent, m => m.To == "owner@north.example.com" && m.Subject.StartsWith("Payment failed"));
+
+        await ChangeTenantAsync("north", t => t.PastDueSince = DateTime.UtcNow - PastGrace);
+        using (var scope = _factory.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<Dunning>().RunAsync();
+
+        Assert.Single(_factory.Mail.Sent, m => m.Subject.EndsWith("is now read-only"));
+    }
+
+    [Fact]
+    public async Task A_mail_that_fails_is_sent_by_the_next_pass()
+    {
+        await PastDueAsync("north", TimeSpan.FromDays(1));
+        await ChangeTenantAsync("north", t => t.OwnerEmail = "owner@north.example.com");
+        using var scope = _factory.Services.CreateScope();
+        var dunning = scope.ServiceProvider.GetRequiredService<Dunning>();
+
+        _factory.Mail.Fail = true;
+        Assert.Equal(0, await dunning.WarnPastDueAsync());
+        _factory.Mail.Fail = false;
+        Assert.Equal(1, await dunning.WarnPastDueAsync());
+        Assert.Equal(0, await dunning.WarnPastDueAsync());
+    }
+
+    [Fact]
+    public async Task Dates_leave_the_catalog_marked_as_utc()
+    {
+        await PastDueAsync("north", TimeSpan.FromDays(2));
+        var admin = (await _factory.SignInAtAsync("north")).Client;
+
+        var body = await admin.GetStringAsync("/api/billing/notice");
+
+        Assert.Matches("\"until\":\"[^\"]+Z\"", body);
+    }
+
+    [Fact]
     public async Task A_suspended_clinic_notices_at_once_and_can_still_read()
     {
         await PastDueAsync("north", PastGrace);

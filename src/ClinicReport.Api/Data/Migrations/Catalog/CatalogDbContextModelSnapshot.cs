@@ -73,6 +73,9 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("PastDueNoticeAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("PastDueSince")
                         .HasColumnType("TEXT");
 

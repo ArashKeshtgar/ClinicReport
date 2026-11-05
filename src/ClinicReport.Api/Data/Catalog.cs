@@ -1,6 +1,7 @@
 using ClinicReport.Api.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Options;
 
 namespace ClinicReport.Api.Data;
@@ -66,6 +67,9 @@ public class Tenant
     /// which tells a suspension for not paying from the operator's, which paying doesn't undo.
     /// </summary>
     public DateTime? PastDueSince { get; set; }
+
+    /// <summary>When the owner was told about the failed payment. Null until the mail has gone out, so it is tried again.</summary>
+    public DateTime? PastDueNoticeAt { get; set; }
 
     /// <summary>When the subscription ended. Null for a tenant the operator cancelled, which is gone at once.</summary>
     public DateTime? CancelledAt { get; set; }
@@ -135,6 +139,15 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<TenantSettings> TenantSettings => Set<TenantSettings>();
+
+    /// <summary>SQLite keeps no time zone, so dates would come back unmarked and browsers would read them as local time.</summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder b)
+    {
+        b.Properties<DateTime>().HaveConversion<UtcConverter>();
+        b.Properties<DateTime?>().HaveConversion<UtcConverter>();
+    }
+
+    private sealed class UtcConverter() : ValueConverter<DateTime, DateTime>(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
 
     protected override void OnModelCreating(ModelBuilder b)
     {

@@ -94,6 +94,7 @@ public sealed class StripeEvents(CatalogDbContext catalog, TenantDirectory direc
                 tenant.Status = TenantStatus.Cancelled;
                 tenant.CancelledAt = clock.GetUtcNow().UtcDateTime;
                 tenant.PastDueSince = null;
+                tenant.PastDueNoticeAt = null;
                 break;
             case Subscription { Status: "active" or "trialing" } subscription:
                 Subscribe(tenant, subscription.CustomerId, subscription.Id);
@@ -118,6 +119,7 @@ public sealed class StripeEvents(CatalogDbContext catalog, TenantDirectory direc
         tenant.StripeSubscriptionId = subscriptionId;
         tenant.CancelledAt = null;
         tenant.PastDueSince = null;
+        tenant.PastDueNoticeAt = null;
     }
 
     /// <summary>The first failure starts the grace period; those after it don't restart it.</summary>

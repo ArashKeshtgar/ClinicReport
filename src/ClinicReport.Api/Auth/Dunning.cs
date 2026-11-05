@@ -4,8 +4,53 @@ using Microsoft.EntityFrameworkCore;
 namespace ClinicReport.Api.Auth;
 
 /// <summary>Hosted mode: a clinic whose payment stayed failed past the grace period becomes read-only.</summary>
-public sealed class Dunning(CatalogDbContext catalog, TenantDirectory directory, TimeProvider clock, ILogger<Dunning> logger)
+public sealed class Dunning(CatalogDbContext catalog, TenantDirectory directory, TimeProvider clock, IMailSender mail, ILogger<Dunning> logger)
 {
+    public async Task RunAsync(CancellationToken ct = default)
+    {
+        await WarnPastDueAsync(ct);
+        await SuspendOverdueAsync(ct);
+    }
+
+    /// <summary>
+    /// Tells each past-due clinic's owner once: someone who doesn't sign in that week would never see the banner.
+    /// A mail that fails is tried again by the next pass. Returns how many went out.
+    /// </summary>
+    public async Task<int> WarnPastDueAsync(CancellationToken ct = default)
+    {
+        var due = await catalog.Tenants.Where(t => t.Status == TenantStatus.PastDue && t.PastDueNoticeAt == null && t.OwnerEmail != null).ToListAsync(ct);
+        var sent = 0;
+        foreach (var tenant in due)
+        {
+            if (!await TellOwnerAsync(tenant, $"Payment failed for {tenant.Name}",
+                $"""
+                The last payment for {tenant.Name} failed.
+
+                Update the card on the clinic's Billing page by {tenant.DeadlineAt:yyyy-MM-dd} (UTC). After that the clinic
+                becomes read-only: reports can still be read and exported, but not written or changed.
+                """, ct))
+                continue;
+            tenant.PastDueNoticeAt = clock.GetUtcNow().UtcDateTime;
+            await catalog.SaveChangesAsync(ct);
+            sent++;
+        }
+        return sent;
+    }
+
+    private async Task<bool> TellOwnerAsync(Tenant tenant, string subject, string body, CancellationToken ct)
+    {
+        try
+        {
+            await mail.SendAsync(new OutgoingMail(tenant.OwnerEmail!, subject, body), ct);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Mail to the owner of {Tenant} not sent: {Error}", tenant.Slug, ex.GetType().Name);
+            return false;
+        }
+    }
+
     /// <summary>Returns how many clinics it suspended.</summary>
     public async Task<int> SuspendOverdueAsync(CancellationToken ct = default)
     {
@@ -21,6 +66,9 @@ public sealed class Dunning(CatalogDbContext catalog, TenantDirectory directory,
             directory.Forget(slug);
             suspended++;
             logger.LogInformation("Suspended {Tenant}: payment overdue", slug);
+            if (await catalog.Tenants.AsNoTracking().SingleAsync(t => t.Slug == slug, ct) is { OwnerEmail: not null } tenant)
+                await TellOwnerAsync(tenant, $"{tenant.Name} is now read-only",
+                    $"The payment for {tenant.Name} stayed overdue, so the clinic is read-only. Update the card on its Billing page to restore it at once.", ct);
         }
         return suspended;
     }
@@ -39,7 +87,7 @@ public sealed class DunningService(IServiceScopeFactory scopes, TimeProvider clo
             try
             {
                 using var scope = scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<Dunning>().SuspendOverdueAsync(stoppingToken);
+                await scope.ServiceProvider.GetRequiredService<Dunning>().RunAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
