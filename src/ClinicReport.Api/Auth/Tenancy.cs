@@ -77,7 +77,7 @@ public static class Tenancy
 
     /// <summary>Hosted mode, on the root domain: no tenant, only sign-up.</summary>
     public static bool OnRootDomain(this HttpContext http) =>
-        http.RequestServices.IsHosted() && http.RequestServices.GetRequiredService<ITenantContext>().Tenant is null;
+        http.RequestServices.IsHosted() && http.RequestServices.GetRequiredService<ITenantContext>().Tenant is null && !http.OnOperatorHost();
 
     /// <summary>The clinic's name and letterhead: the tenant's in Hosted mode, otherwise the "Clinic" settings.</summary>
     public static ClinicOptions CurrentClinic(this HttpContext http)
@@ -122,6 +122,20 @@ public static class Tenancy
                 return;
             }
             var slug = SlugOf(ctx.Request.Host.Host, hosting.BaseDomain!);
+            if (slug == OperatorSetup.Subdomain)
+            {
+                // The console: no tenant here, and of the API only its own part.
+                var path = ctx.Request.Path;
+                if (path.StartsWithSegments("/hubs") || (path.StartsWithSegments("/api")
+                    && !path.StartsWithSegments("/api/operator") && !path.StartsWithSegments("/api/settings")))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                ctx.MarkOperatorHost();
+                await next();
+                return;
+            }
             var tenant = slug is null ? null : await ctx.RequestServices.GetRequiredService<TenantDirectory>()
                 .FindAsync(slug, ctx.RequestServices.GetRequiredService<CatalogDbContext>(), ctx.RequestAborted);
             if (tenant is null || tenant.Gone(ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime))

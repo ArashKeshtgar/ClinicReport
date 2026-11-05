@@ -96,6 +96,17 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<
 
     public bool Exists(string slug) => File.Exists(FileOf(slug));
 
+    /// <summary>Size and last write of the database, read from the file system: the database itself isn't opened.</summary>
+    public (long Bytes, DateTime? LastWriteUtc) FileFacts(string slug)
+    {
+        var file = new FileInfo(FileOf(slug));
+        if (!file.Exists)
+            return (0, null);
+        // Recent writes wait in the write-ahead log.
+        var wal = new FileInfo(file.FullName + "-wal");
+        return (file.Length, wal.Exists && wal.LastWriteTimeUtc > file.LastWriteTimeUtc ? wal.LastWriteTimeUtc : file.LastWriteTimeUtc);
+    }
+
     /// <summary>
     /// Removes a clinic's database file, for a sign-up that failed half-way. Not for a tenant in use: its open
     /// requests would recreate the file.

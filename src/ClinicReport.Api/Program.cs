@@ -79,6 +79,17 @@ if (args.Contains(TenantMigration.Command))
     return;
 }
 
+// "--add-operator name" (Hosted): an account for the console. Its password and secret are shown here once.
+if (Array.IndexOf(args, OperatorSetup.Command) is >= 0 and var operatorArg)
+{
+    if (!hosted || operatorArg + 1 >= args.Length)
+        throw new InvalidOperationException($"{OperatorSetup.Command} <name> is for Hosted mode.");
+    var (password, secret) = await OperatorSetup.AddAsync(app.Services, args[operatorArg + 1]);
+    Console.WriteLine($"Password: {password}");
+    Console.WriteLine($"Two-factor: {Totp.OtpAuthUri("ClinicReport console", args[operatorArg + 1], secret)}");
+    return;
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseTenantResolution();
@@ -103,6 +114,8 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
     {
         clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,
         Signup = signup,
+        // Hosted, at the console's host: not a clinic and not the sign-up page.
+        Operator = http.OnOperatorHost(),
         Hosted = http.RequestServices.IsHosted(),
         // Hosted: signed up, email not confirmed yet, so no reports can be started.
         AwaitingEmailVerification = http.RequestServices.GetService<ITenantContext>()?.Tenant?.AwaitingEmailVerification == true,
@@ -121,6 +134,7 @@ app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 app.MapSignupEndpoints();
 app.MapClinicEndpoints();
 app.MapBillingEndpoints();
+app.MapOperatorEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapPatientEndpoints();

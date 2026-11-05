@@ -6,6 +6,7 @@ import Signup from './pages/Signup'
 import VerifyEmail, { VerifyEmailBanner } from './pages/VerifyEmail'
 import Clinic from './pages/Clinic'
 import Billing, { BillingBanner } from './pages/Billing'
+import OperatorConsole from './pages/Operator'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -59,6 +60,7 @@ export default function App() {
   }, [settings])
 
   if (!settings || me === undefined) return <div className="center muted">Loading…</div>
+  if (settings.operator) return <OperatorConsole />
   // Hosted, on the root domain: the service's sign-up page; each clinic works at its own subdomain.
   if (settings.signup) return <Signup baseDomain={settings.baseDomain ?? window.location.host} />
   // The link from the sign-up email works before signing in.

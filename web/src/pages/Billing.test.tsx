@@ -82,6 +82,13 @@ describe('BillingBanner', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
+  it('sends no one to the card when the service did the suspending', async () => {
+    banner({ status: 'Suspended', byOperator: true }, true)
+
+    expect(await screen.findByRole('note')).toHaveTextContent('contact support')
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
   it('offers a cancelled clinic to subscribe again', async () => {
     banner({ status: 'Cancelled', until: '2026-12-01T12:00:00Z' }, true)
 

@@ -17,6 +17,80 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("ClinicReport.Api.Data.OperatorEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OperatorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TenantSlug")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OperatorEvents");
+                });
+
+            modelBuilder.Entity("ClinicReport.Api.Data.OperatorUser", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FailedLoginCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LockoutEndUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("TotpLastStep")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TotpSecret")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserName")
+                        .IsUnique();
+
+                    b.ToTable("Operators");
+                });
+
             modelBuilder.Entity("ClinicReport.Api.Data.ProcessedStripeEvent", b =>
                 {
                     b.Property<string>("Id")

@@ -162,6 +162,42 @@ public class UsageMonth
     public static string Key(DateTime at) => at.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
 }
 
+/// <summary>Someone who runs the service. Not a user of any clinic: signs in at the console, always with two-factor.</summary>
+public class OperatorUser
+{
+    public int Id { get; set; }
+    public string UserName { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+
+    /// <summary>TOTP secret, encrypted with ASP.NET Data Protection.</summary>
+    public string TotpSecret { get; set; } = "";
+    public long TotpLastStep { get; set; }
+    public int FailedLoginCount { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
+    public string SecurityStamp { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+public static class OperatorEventTypes
+{
+    public const string LoginSucceeded = "LoginSucceeded";
+    public const string LoginFailed = "LoginFailed";
+    public const string TenantSuspended = "TenantSuspended";
+    public const string TenantResumed = "TenantResumed";
+    public const string TenantDeleted = "TenantDeleted";
+}
+
+/// <summary>The operators' security log. Never updated or deleted; it outlives the clinics it mentions.</summary>
+public class OperatorEvent
+{
+    public long Id { get; set; }
+    public DateTime At { get; set; }
+    public int? OperatorId { get; set; }
+    public string Type { get; set; } = "";
+    public string? TenantSlug { get; set; }
+    public string? Detail { get; set; }
+}
+
 /// <summary>A Stripe event already handled: Stripe delivers at least once, so the same one can come again.</summary>
 public class ProcessedStripeEvent
 {
@@ -174,6 +210,8 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
+    public DbSet<OperatorUser> Operators => Set<OperatorUser>();
+    public DbSet<OperatorEvent> OperatorEvents => Set<OperatorEvent>();
     public DbSet<UsageEvent> UsageEvents => Set<UsageEvent>();
     public DbSet<UsageMonth> UsageMonths => Set<UsageMonth>();
     public DbSet<TenantSettings> TenantSettings => Set<TenantSettings>();
@@ -203,6 +241,20 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             e.Property(t => t.OwnerEmail).HasMaxLength(64);
             e.Property(t => t.EmailTokenHash).HasMaxLength(64);
             e.HasOne(t => t.Settings).WithOne().HasForeignKey<TenantSettings>(s => s.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<OperatorUser>(e =>
+        {
+            e.Property(o => o.UserName).HasMaxLength(64);
+            e.HasIndex(o => o.UserName).IsUnique();
+            e.Property(o => o.SecurityStamp).HasMaxLength(64);
+        });
+
+        b.Entity<OperatorEvent>(e =>
+        {
+            e.Property(o => o.Type).HasMaxLength(40);
+            e.Property(o => o.TenantSlug).HasMaxLength(40);
+            e.Property(o => o.Detail).HasMaxLength(500);
         });
 
         b.Entity<UsageEvent>(e =>

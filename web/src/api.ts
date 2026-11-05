@@ -22,6 +22,8 @@ export type Settings = {
   demo: boolean; accountsLocked: boolean; demoUsers: string[]
   /** "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles. */
   signIn: 'local' | 'clinichub'; clinicHubUrl: string | null
+  /** Hosted mode, at the console's host: for the people who run the service, not a clinic. */
+  operator?: boolean
   /** Hosted mode, on the root domain: no clinic here, only sign-up. Clinics are subdomains of baseDomain. */
   signup?: boolean; baseDomain?: string | null
   /** Hosted: signed up, but the owner has not confirmed the email yet; no reports can be started. */
@@ -38,10 +40,17 @@ export type Meter = { used: number; limit?: number | null }
 export type BillingStatus = {
   plan: string; status: string; onTrial: boolean; trialEndsAt: string | null
   users: Meter; services: Meter; signedReports: Meter
-  configured: boolean; canUpgrade: boolean; canManage: boolean
+  configured: boolean; canUpgrade: boolean; canManage: boolean; suspendedByOperator?: boolean
 }
 
-export type BillingNotice = { status: 'PastDue' | 'Suspended' | 'Cancelled'; until?: string | null }
+export type BillingNotice = { status: 'PastDue' | 'Suspended' | 'Cancelled'; until?: string | null; byOperator?: boolean }
+
+export type OperatorTenant = {
+  id: number; slug: string; name: string; plan: string; status: string; createdAt: string
+  activeUsers: number | null; signedReports: number | null; lastActivityAt: string | null; databaseBytes: number
+  databaseFailed: boolean; deletedAt: string | null; canDelete: boolean
+}
+export type OperatorEvent = { at: string; operator: string | null; type: string; tenant: string | null; detail: string | null }
 
 export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
 export type SignupResult = { slug: string; url: string; trialEndsAt: string; emailSent: boolean }
@@ -176,6 +185,14 @@ export const api = {
   verifyEmail: (token: string) => request<{ verified: boolean }>('POST', '/api/auth/verify-email', { token }),
   onboarding: () => get<Onboarding>('/api/clinic/onboarding'),
   saveClinic: (body: ClinicLetterhead) => request<void>('PUT', '/api/clinic', body),
+  operatorLogin: (body: { userName: string; password: string; code: string }) => request<{ userName: string }>('POST', '/api/operator/login', body),
+  operatorLogout: () => request<void>('POST', '/api/operator/logout'),
+  operatorMe: () => get<{ userName: string }>('/api/operator/me'),
+  operatorTenants: () => get<OperatorTenant[]>('/api/operator/tenants'),
+  operatorEvents: () => get<OperatorEvent[]>('/api/operator/events'),
+  operatorSuspend: (id: number) => request<void>('POST', `/api/operator/tenants/${id}/suspend`),
+  operatorResume: (id: number) => request<void>('POST', `/api/operator/tenants/${id}/resume`),
+  operatorDelete: (id: number, confirmSlug: string) => request<void>('POST', `/api/operator/tenants/${id}/delete`, { confirmSlug }),
   billing: () => get<BillingStatus>('/api/billing'),
   billingNotice: () => get<BillingNotice | undefined>('/api/billing/notice'),
   startCheckout: () => request<{ url: string }>('POST', '/api/billing/checkout'),

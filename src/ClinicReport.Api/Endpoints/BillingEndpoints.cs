@@ -15,9 +15,10 @@ public static class BillingEndpoints
     public record Meter(int Used, int? Limit);
     public record BillingStatus(
         string Plan, string Status, bool OnTrial, DateTime? TrialEndsAt,
-        Meter Users, Meter Services, Meter SignedReports, bool Configured, bool CanUpgrade, bool CanManage);
+        Meter Users, Meter Services, Meter SignedReports, bool Configured, bool CanUpgrade, bool CanManage, bool SuspendedByOperator);
     public record RedirectTo(string Url);
-    public record BillingNotice(string Status, DateTime? Until);
+    /// <param name="ByOperator">Suspended by the service, not for not paying: paying won't lift it.</param>
+    public record BillingNotice(string Status, DateTime? Until, bool ByOperator);
 
     public static void MapBillingEndpoints(this IEndpointRouteBuilder app)
     {
@@ -54,7 +55,7 @@ public static class BillingEndpoints
         // For everyone at the clinic, once signed in: not in /api/settings, which the sign-in page reads.
         app.MapGet("/api/billing/notice", (ITenantContext current) =>
             current.Tenant is { Status: TenantStatus.PastDue or TenantStatus.Suspended or TenantStatus.Cancelled } tenant
-                ? Results.Ok(new BillingNotice(tenant.Status, tenant.DeadlineAt))
+                ? Results.Ok(new BillingNotice(tenant.Status, tenant.DeadlineAt, tenant.Status == TenantStatus.Suspended && tenant.PastDueSince is null))
                 : Results.NoContent()).RequireAuthorization().WithTags("Billing");
 
         admin.MapGet("/", async (ITenantContext current, PlanLimits limits, TimeProvider clock, IOptions<StripeOptions> stripe, CancellationToken ct) =>
@@ -68,7 +69,8 @@ public static class BillingEndpoints
                 new(usage.ActiveUsers, free ? PlanLimits.FreeUsers : null),
                 new(usage.Services, free ? PlanLimits.FreeServices : null),
                 new(usage.SignedThisMonth, free ? PlanLimits.FreeSignedReportsPerMonth : null),
-                stripe.Value.Configured, tenant.StripeSubscriptionId is null, tenant.StripeCustomerId is not null);
+                stripe.Value.Configured, tenant.StripeSubscriptionId is null, tenant.StripeCustomerId is not null,
+                tenant.Status == TenantStatus.Suspended && tenant.PastDueSince is null);
         });
 
         admin.MapPost("/checkout", async (HttpContext http, ITenantContext current, PlanLimits limits, IBillingGateway gateway, IOptions<StripeOptions> stripe, CancellationToken ct) =>

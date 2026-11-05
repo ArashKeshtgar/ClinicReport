@@ -71,9 +71,12 @@ public static class AuthSetup
                     : LoadCurrentAccess(ctx);
             });
         services.AddClinicHubSignIn(config, authentication);
+        if (config.GetSection("Hosting").Get<HostingOptions>()?.Hosted == true)
+            services.AddOperatorAuth(authentication);
 
         var auth = services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        auth.AddPolicy(OperatorSetup.Policy, policy => policy.AddAuthenticationSchemes(OperatorSetup.Scheme).RequireAuthenticatedUser());
         // One policy per permission, named after it: .RequireAuthorization(Permissions.ReportsSign)
         foreach (var p in Permissions.All)
             auth.AddPolicy(p, policy => policy.RequireClaim(AppClaims.Permission, p));

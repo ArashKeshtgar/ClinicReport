@@ -14,7 +14,8 @@ function Usage({ label, meter }: { label: string; meter: Meter }) {
 
 const day = (at?: string | null) => at ? new Date(at).toLocaleDateString() : null
 
-function noticeText({ status, until }: BillingNotice) {
+function noticeText({ status, until, byOperator }: BillingNotice) {
+  if (byOperator) return 'This clinic has been suspended by the service: reports can be read and exported, not changed. Please contact support.'
   if (status === 'PastDue') return `The last payment failed. ${day(until) ? `The clinic becomes read-only on ${day(until)}.` : 'The clinic will become read-only.'}`
   if (status === 'Suspended') return 'This clinic is suspended: reports can be read and exported, not changed.'
   return `The subscription has ended. ${day(until) ? `Reports can be read and exported until ${day(until)}.` : ''}`
@@ -30,7 +31,7 @@ export function BillingBanner({ canManage }: { canManage: boolean }) {
   return (
     <div className="demo-banner" role="note">
       {noticeText(notice)}{' '}
-      {canManage ? <Link to="/billing">{notice.status === 'Cancelled' ? 'Subscribe again' : 'Update the card'}</Link> : <strong>Please tell your administrator.</strong>}
+      {notice.byOperator ? null : canManage ? <Link to="/billing">{notice.status === 'Cancelled' ? 'Subscribe again' : 'Update the card'}</Link> : <strong>Please tell your administrator.</strong>}
     </div>
   )
 }
@@ -70,7 +71,8 @@ export default function Billing() {
             {billing.onTrial && billing.trialEndsAt && (
               <p className="muted small">The trial ends on {new Date(billing.trialEndsAt).toLocaleDateString()}, then the Free plan's limits apply.</p>
             )}
-            {STATUS_NOTES[billing.status] && <p className="error" role="alert">{STATUS_NOTES[billing.status]}</p>}
+            {!billing.suspendedByOperator && STATUS_NOTES[billing.status] && <p className="error" role="alert">{STATUS_NOTES[billing.status]}</p>}
+            {billing.suspendedByOperator && <p className="error" role="alert">This clinic has been suspended by the service. Please contact support.</p>}
             <ul>
               <Usage label="Active users" meter={billing.users} />
               <Usage label="Services" meter={billing.services} />
