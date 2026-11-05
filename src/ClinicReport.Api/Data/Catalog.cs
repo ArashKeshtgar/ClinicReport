@@ -25,6 +25,15 @@ public class HostingOptions
     /// <summary>Where each tenant's own database is, "{clinic}" being its slug.</summary>
     public string DatabasePattern { get; set; } = "Data Source=clinicreport-{clinic}.db";
 
+    /// <summary>False on a server with no mail: nothing could be confirmed, so sign-ups count as confirmed.</summary>
+    public bool VerifyEmail { get; set; } = true;
+
+    /// <summary>The public test deployment: every page says not to enter real patients.</summary>
+    public bool SyntheticDataOnly { get; set; }
+
+    /// <summary>Clinics the service takes. Each one is a database and a TLS certificate, so a public sign-up needs a ceiling.</summary>
+    public int? MaxTenants { get; set; }
+
     public bool Hosted => string.Equals(Mode, HostedMode, StringComparison.OrdinalIgnoreCase);
 }
 

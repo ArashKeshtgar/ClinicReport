@@ -121,7 +121,7 @@ app.UsePendingActionGate();
 app.UseAuthorization();
 app.UseCsrfHeaderCheck();
 
-app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub) =>
+app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOptions<ClinicHubOptions> hub, IOptions<HostingOptions> hosting) =>
 {
     // Hosted: the tenant of the host, or on the root domain the service's sign-up. Otherwise the "Clinic" settings.
     var signup = http.OnRootDomain();
@@ -132,6 +132,7 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
         Signup = signup,
         // Hosted, at the console's host: not a clinic and not the sign-up page.
         Operator = http.OnOperatorHost(),
+        SyntheticDataOnly = hosting.Value.SyntheticDataOnly,
         Hosted = http.RequestServices.IsHosted(),
         // Hosted: signed up, email not confirmed yet, so no reports can be started.
         AwaitingEmailVerification = http.RequestServices.GetService<ITenantContext>()?.Tenant?.AwaitingEmailVerification == true,

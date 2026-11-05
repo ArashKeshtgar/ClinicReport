@@ -77,6 +77,11 @@ export default function App() {
           Public demo with synthetic patients. <strong>Do not enter real patient information.</strong>
         </div>
       )}
+      {!printing && settings.syntheticDataOnly && (
+        <div className="demo-banner" role="note">
+          Test service. <strong>Do not enter real patient information.</strong> Use made-up names only.
+        </div>
+      )}
       {!printing && settings.awaitingEmailVerification && <VerifyEmailBanner canResend={can(me, 'users.manage')} />}
       {!printing && settings.hosted && <BillingBanner canManage={can(me, 'users.manage')} />}
       <main className={printing ? '' : 'page'}>

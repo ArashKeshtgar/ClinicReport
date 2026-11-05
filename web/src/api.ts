@@ -22,6 +22,8 @@ export type Settings = {
   demo: boolean; accountsLocked: boolean; demoUsers: string[]
   /** "clinichub": people sign in through ClinicHub, which also manages passwords, two-factor and roles. */
   signIn: 'local' | 'clinichub'; clinicHubUrl: string | null
+  /** The public test deployment of the hosted service. */
+  syntheticDataOnly?: boolean
   /** Hosted mode, at the console's host: for the people who run the service, not a clinic. */
   operator?: boolean
   /** Hosted mode, on the root domain: no clinic here, only sign-up. Clinics are subdomains of baseDomain. */

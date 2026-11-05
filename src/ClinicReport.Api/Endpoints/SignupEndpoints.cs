@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Net.Mail;
 using ClinicReport.Api.Auth;
+using Microsoft.Extensions.Options;
 using ClinicReport.Api.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -61,7 +62,8 @@ public static class SignupEndpoints
         });
 
         api.MapPost("/", async (SignupRequest req, HttpContext http, CatalogDbContext catalog, ClinicReportDatabases databases,
-            TenantDirectory directory, IPasswordHasher<AppUser> hasher, IMailSender mail, TimeProvider clock, ILoggerFactory logs, CancellationToken ct) =>
+            TenantDirectory directory, IPasswordHasher<AppUser> hasher, IMailSender mail, IOptions<HostingOptions> hosting, TimeProvider clock,
+            ILoggerFactory logs, CancellationToken ct) =>
         {
             var name = (req.ClinicName ?? "").Trim();
             var slug = (req.Slug ?? "").Trim().ToLowerInvariant();
@@ -84,6 +86,8 @@ public static class SignupEndpoints
 
             if (await IsTakenAsync(slug, catalog, databases, ct))
                 return Taken();
+            if (hosting.Value.MaxTenants is { } most && await catalog.Tenants.CountAsync(t => t.DeletedAt == null, ct) >= most)
+                return Results.Problem("This service isn't taking new clinics at the moment.", statusCode: StatusCodes.Status503ServiceUnavailable);
 
             var now = clock.GetUtcNow().UtcDateTime;
             var tenant = new Tenant
@@ -91,7 +95,10 @@ public static class SignupEndpoints
                 Slug = slug, Name = name, Status = TenantStatus.Trial, Plan = Plans.Trial, TrialEndsAt = now + TrialLength,
                 CreatedAt = now, Settings = new TenantSettings(), OwnerEmail = email,
             };
-            var token = EmailVerification.NewToken(tenant, now);
+            var verify = hosting.Value.VerifyEmail;
+            var token = verify ? EmailVerification.NewToken(tenant, now) : null;
+            if (!verify)
+                tenant.EmailVerifiedAt = now;
             catalog.Tenants.Add(tenant);
             try
             {
@@ -130,7 +137,7 @@ public static class SignupEndpoints
             // A request to the address before now found no tenant, which is never cached; this is for whatever else is.
             directory.Forget(slug);
             var url = $"{http.Request.Scheme}://{slug}.{http.Request.Host}/";
-            var sent = await EmailVerification.SendAsync(tenant, token, url, mail, logs.CreateLogger("Signup"), CancellationToken.None);
+            var sent = token is not null && await EmailVerification.SendAsync(tenant, token, url, mail, logs.CreateLogger("Signup"), CancellationToken.None);
             return Results.Created(url, new SignupResult(slug, url, tenant.TrialEndsAt!.Value, sent));
         }).RequireRateLimiting(SignupRateLimit);
 

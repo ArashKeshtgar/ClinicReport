@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ClinicReport.Api.Endpoints;
 
@@ -26,6 +27,9 @@ public static class OperatorEndpoints
         DateTime? DeletedAt, bool CanDelete);
     public record EventRow(DateTime At, string? Operator, string Type, string? Tenant, string? Detail);
     public record DeleteBody(string? ConfirmSlug);
+
+    /// <summary>The one clinic the release smoke test may remove outright.</summary>
+    public const string SmokeTenant = "smoke-test";
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -120,9 +124,7 @@ public static class OperatorEndpoints
         // For ControlPanel: counts only, and only with the token. Without one set, it isn't there.
         app.MapGet("/healthz/tenants", async (HttpContext http, IConfiguration config, CatalogDbContext catalog, CancellationToken ct) =>
         {
-            var token = config["Health:Token"];
-            if (string.IsNullOrEmpty(token) || !CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(http.Request.Headers["X-Health-Token"].ToString()), Encoding.UTF8.GetBytes(token)))
+            if (!HasHealthToken(http, config))
                 return Results.NotFound();
             var tenants = await catalog.Tenants.AsNoTracking().Where(t => t.DeletedAt == null).Select(t => new { t.Status, t.DatabaseFailed }).ToListAsync(ct);
             return Results.Ok(new
@@ -131,6 +133,41 @@ public static class OperatorEndpoints
                 ByStatus = tenants.GroupBy(t => t.Status).ToDictionary(g => g.Key, g => g.Count()),
                 DatabaseFailed = tenants.Count(t => t.DatabaseFailed),
             });
+        }).AllowAnonymous();
+
+        // Caddy asks before getting a certificate on demand: only real addresses, or anyone could spend the domain's
+        // Let's Encrypt limit by making up subdomains. Reachable from Caddy, not through it.
+        app.MapGet("/healthz/tls-ask", async (string? domain, IOptions<HostingOptions> hosting, TenantDirectory directory, CatalogDbContext catalog, TimeProvider clock, CancellationToken ct) =>
+        {
+            var baseDomain = hosting.Value.BaseDomain!;
+            if (domain is null)
+                return Results.NotFound();
+            if (Tenancy.IsRoot(domain, baseDomain))
+                return Results.Ok();
+            var slug = Tenancy.SlugOf(domain, baseDomain);
+            if (slug == OperatorSetup.Subdomain)
+                return Results.Ok();
+            var tenant = slug is null ? null : await directory.FindAsync(slug, catalog, ct);
+            return tenant is null || tenant.Gone(clock.GetUtcNow().UtcDateTime) ? Results.NotFound() : Results.Ok();
+        }).AllowAnonymous();
+
+        // For the release smoke test, which signs this one clinic up each time. Like the health counts, behind the token;
+        // done here, not from a command, as this process keeps the clinic's database open.
+        app.MapPost("/healthz/smoke-tenant/remove", async (HttpContext http, IConfiguration config, CatalogDbContext catalog, ClinicReportDatabases databases,
+            TenantDirectory directory, CancellationToken ct) =>
+        {
+            if (!HasHealthToken(http, config))
+                return Results.NotFound();
+            directory.Forget(SmokeTenant);
+            databases.Delete(SmokeTenant);
+            if (await catalog.Tenants.SingleOrDefaultAsync(t => t.Slug == SmokeTenant, ct) is { } tenant)
+            {
+                await catalog.UsageEvents.Where(e => e.TenantId == tenant.Id).ExecuteDeleteAsync(ct);
+                await catalog.UsageMonths.Where(m => m.TenantId == tenant.Id).ExecuteDeleteAsync(ct);
+                catalog.Tenants.Remove(tenant);
+                await catalog.SaveChangesAsync(ct);
+            }
+            return Results.NoContent();
         }).AllowAnonymous();
 
         api.MapPost("/tenants/{id:int}/resume", (int id, ClaimsPrincipal me, CatalogDbContext catalog, TenantDirectory directory, TimeProvider clock, CancellationToken ct) =>
@@ -143,6 +180,10 @@ public static class OperatorEndpoints
                 tenant.PastDueNoticeAt = null;
             }, ct));
     }
+
+    private static bool HasHealthToken(HttpContext http, IConfiguration config) =>
+        config["Health:Token"] is { Length: > 0 } token && CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(http.Request.Headers["X-Health-Token"].ToString()), Encoding.UTF8.GetBytes(token));
 
     /// <summary>Only a clinic past its time to export, and only by hand: the slug has to be typed out.</summary>
     private static async Task<IResult> DeleteAsync(int id, DeleteBody body, ClaimsPrincipal me, CatalogDbContext catalog, ClinicReportDatabases databases,

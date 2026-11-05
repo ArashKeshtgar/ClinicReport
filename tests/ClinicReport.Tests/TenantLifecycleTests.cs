@@ -11,6 +11,60 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ClinicReport.Tests;
 
+/// <summary>The public test deployment: no mail on the server, every page warns, and a ceiling on clinics.</summary>
+public class PublicHostedTests : IAsyncLifetime
+{
+    private sealed class Factory : HostedFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.UseSetting("Hosting:VerifyEmail", "false");
+            builder.UseSetting("Hosting:SyntheticDataOnly", "true");
+            builder.UseSetting("Hosting:MaxTenants", "2");
+        }
+    }
+
+    private readonly Factory _factory = new();
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _factory.DisposeAsync();
+
+    private Task<HttpResponseMessage> SignUpAsync(string slug) => _factory.RootClient().PostAsJsonAsync("/api/signup",
+        new { clinicName = $"Clinic {slug}", slug, adminName = "Test Owner", email = $"owner@{slug}.example.com", password = "a long passphrase 42" });
+
+    [Fact]
+    public async Task Without_mail_a_sign_up_counts_as_confirmed_and_sends_nothing()
+    {
+        Assert.Equal(HttpStatusCode.Created, (await SignUpAsync("north")).StatusCode);
+
+        Assert.Empty(_factory.Mail.Sent);
+        var settings = await _factory.ClientFor("north").GetFromJsonAsync<JsonObject>("/api/settings");
+        Assert.False((bool)settings!["awaitingEmailVerification"]!);
+    }
+
+    [Fact]
+    public async Task Every_page_can_warn_that_this_is_for_made_up_data()
+    {
+        await SignUpAsync("north");
+
+        Assert.True((bool)(await _factory.ClientFor("north").GetFromJsonAsync<JsonObject>("/api/settings"))!["syntheticDataOnly"]!);
+    }
+
+    [Fact]
+    public async Task The_ceiling_stops_new_clinics_and_leaves_the_others_alone()
+    {
+        await SignUpAsync("north");
+        await SignUpAsync("south");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await SignUpAsync("east")).StatusCode);
+
+        Assert.False(File.Exists(_factory.DatabaseOf("east")));
+        Assert.Equal(HttpStatusCode.OK, (await _factory.ClientFor("north").GetAsync("/api/settings")).StatusCode);
+    }
+}
+
 /// <summary>Hosted mode: a clinic leaving with its data, being deleted, and being backed up and restored on its own.</summary>
 public class TenantLifecycleTests : IAsyncLifetime
 {
@@ -294,6 +348,57 @@ public class TenantLifecycleTests : IAsyncLifetime
         Assert.Equal(1, (int)health["databaseFailed"]!);
         Assert.Equal(1, (int)health["byStatus"]![TenantStatus.Suspended]!);
         Assert.DoesNotContain("north", body);
+    }
+
+    [Fact]
+    public async Task Certificates_are_only_for_addresses_that_exist()
+    {
+        await _factory.AddTenantAsync("north");
+        await _factory.AddTenantAsync("gone", TenantStatus.Cancelled);
+        var client = _factory.CreateClient();
+        async Task<HttpStatusCode> Ask(string domain) => (await client.GetAsync($"/healthz/tls-ask?domain={domain}")).StatusCode;
+
+        Assert.Equal(HttpStatusCode.OK, await Ask(HostedFactory.BaseDomain));
+        Assert.Equal(HttpStatusCode.OK, await Ask($"admin.{HostedFactory.BaseDomain}"));
+        Assert.Equal(HttpStatusCode.OK, await Ask($"north.{HostedFactory.BaseDomain}"));
+        Assert.Equal(HttpStatusCode.NotFound, await Ask($"made-up.{HostedFactory.BaseDomain}"));
+        Assert.Equal(HttpStatusCode.NotFound, await Ask($"gone.{HostedFactory.BaseDomain}"));
+        Assert.Equal(HttpStatusCode.NotFound, await Ask("north.example.com"));
+        Assert.Equal(HttpStatusCode.NotFound, await Ask($"a.b.{HostedFactory.BaseDomain}"));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/healthz/tls-ask")).StatusCode);
+    }
+
+    private async Task<HttpResponseMessage> SignUpSmokeAsync() => await _factory.RootClient().PostAsJsonAsync("/api/signup",
+        new { clinicName = "Smoke Test", slug = "smoke-test", adminName = "Smoke Owner", email = "smoke@smoke-test.example.com", password = "a long passphrase 42" });
+
+    [Fact]
+    public async Task The_smoke_clinic_can_sign_up_again_after_being_removed()
+    {
+        Assert.Equal(HttpStatusCode.Created, (await SignUpSmokeAsync()).StatusCode);
+        var client = _factory.CreateClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync("/healthz/smoke-tenant/remove", null)).StatusCode);
+        client.DefaultRequestHeaders.Add("X-Health-Token", HealthToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/healthz/smoke-tenant/remove", null)).StatusCode);
+        Assert.False(File.Exists(_factory.DatabaseOf("smoke-test")));
+
+        Assert.Equal(HttpStatusCode.Created, (await SignUpSmokeAsync()).StatusCode);
+        var owner = _factory.ClientFor("smoke-test");
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync("/api/auth/login", new { userName = "smoke@smoke-test.example.com", password = "a long passphrase 42" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync("/api/reports")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Removing_the_smoke_clinic_touches_no_other()
+    {
+        await _factory.AddTenantAsync("north");
+        await (await _factory.SignInAtAsync("north")).Client.GetAsync("/api/settings");
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Health-Token", HealthToken);
+
+        await client.PostAsync("/healthz/smoke-tenant/remove", null);
+
+        Assert.True(File.Exists(_factory.DatabaseOf("north")));
     }
 
     [Fact]
