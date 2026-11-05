@@ -58,6 +58,9 @@ public class Tenant
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
 
+    /// <summary>The quantity last set on the subscription. Null until the seat sync has set one.</summary>
+    public int? BilledSeats { get; set; }
+
     /// <summary>
     /// When the first failed payment put the clinic past due; the grace period runs from here. Kept once suspended,
     /// which tells a suspension for not paying from the operator's, which paying doesn't undo.
@@ -200,6 +203,9 @@ public static class CatalogSetup
         config.GetSection("Stripe").Get<StripeOptions>()?.EnsureTestKey();
         services.AddSingleton<IBillingGateway, StripeBillingGateway>();
         services.AddScoped<StripeEvents>();
+        services.AddSingleton<SeatChanges>();
+        services.AddScoped<SeatSync>();
+        services.AddHostedService<SeatSyncService>();
         services.AddScoped<Dunning>();
         services.AddHostedService<DunningService>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.

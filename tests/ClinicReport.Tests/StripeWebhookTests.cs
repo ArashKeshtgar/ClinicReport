@@ -268,6 +268,23 @@ public class StripeWebhookTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_new_subscription_forgets_the_seats_of_the_old_one()
+    {
+        await SubscribedAsync("north");
+        await ChangeTenantAsync("north", t => t.BilledSeats = 9);
+
+        await SendAsync(Event("customer.subscription.updated", Subscription("active", "north"), created: Later()));
+        Assert.Equal(9, (await TenantAsync("north")).BilledSeats);
+
+        await SendAsync(Event("checkout.session.completed", Checkout("north", subscription: "sub_2"), created: Later()));
+        Assert.Null((await TenantAsync("north")).BilledSeats);
+
+        await ChangeTenantAsync("north", t => t.BilledSeats = 9);
+        await SendAsync(Event("customer.subscription.deleted", Subscription("canceled", "north", id: "sub_2"), created: Later()));
+        Assert.Null((await TenantAsync("north")).BilledSeats);
+    }
+
+    [Fact]
     public async Task Paying_ends_a_suspension_for_not_paying()
     {
         await SubscribedAsync("north");

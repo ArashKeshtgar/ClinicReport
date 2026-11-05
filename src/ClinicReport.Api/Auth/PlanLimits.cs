@@ -11,7 +11,7 @@ public record PlanUsage(int ActiveUsers, int Services, int SignedThisMonth);
 /// Limits stop growth only: after a downgrade, everyone and everything the clinic already has keeps working.
 /// Outside Hosted mode there is no tenant and nothing is limited.
 /// </summary>
-public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITenantContext? current = null)
+public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITenantContext? current = null, SeatChanges? seatChanges = null)
 {
     public const int FreeUsers = 3;
     public const int FreeServices = 2;
@@ -19,7 +19,17 @@ public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITe
 
     private bool Free => current?.Tenant?.EffectivePlan(clock.GetUtcNow().UtcDateTime) == Plans.Free;
 
-    private Task<int> ActiveUsersAsync(CancellationToken ct) => db.Users.CountAsync(u => u.IsActive, ct);
+    /// <summary>The active users of a clinic: its limit on Free, and on Pro the seats it pays for.</summary>
+    public static Task<int> CountSeatsAsync(ClinicReportDbContext db, CancellationToken ct = default) => db.Users.CountAsync(u => u.IsActive, ct);
+
+    private Task<int> ActiveUsersAsync(CancellationToken ct) => CountSeatsAsync(db, ct);
+
+    /// <summary>After the clinic's active users may have changed; a subscribed clinic's seats then follow.</summary>
+    public void NoteSeatChange()
+    {
+        if (current?.Tenant is { StripeSubscriptionId: not null } tenant)
+            seatChanges?.Note(tenant.Slug);
+    }
 
     private Task<int> SignedThisMonthAsync(CancellationToken ct)
     {
@@ -33,7 +43,7 @@ public sealed class PlanLimits(ClinicReportDbContext db, TimeProvider clock, ITe
         .Where(t => t.Id != exceptTemplateId && t.IsActive && t.Versions.Any(v => v.Status == TemplateStatus.Published))
         .Select(t => t.Service).ToListAsync(ct)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-    /// <summary>What the clinic uses now, counted the way the limits count it. Active users are also the seats it pays for.</summary>
+    /// <summary>What the clinic uses now, counted the way the limits count it.</summary>
     public async Task<PlanUsage> UsageAsync(CancellationToken ct = default) =>
         new(await ActiveUsersAsync(ct), (await ServicesInUseAsync(null, ct)).Count, await SignedThisMonthAsync(ct));
 

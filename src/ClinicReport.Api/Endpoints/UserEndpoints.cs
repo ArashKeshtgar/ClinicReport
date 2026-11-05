@@ -79,6 +79,7 @@ public static class UserEndpoints
             user.PasswordHash = hasher.HashPassword(user, req.Password);
             db.Users.Add(user);
             await db.SaveChangesAsync();
+            limits.NoteSeatChange();
             await log.WriteAsync(SecurityEventTypes.UserCreated, me.RequiredUserId(), user.Id,
                 $"Roles: {string.Join(", ", roles.Select(r => r.Name))}; services: {ServicesText(req.Services)}");
             var created = await LoadAsync(db, user.Id);
@@ -129,6 +130,7 @@ public static class UserEndpoints
 
             log.Add(SecurityEventTypes.UserUpdated, me.RequiredUserId(), user.Id, $"{before} → {Describe(user)}");
             await db.SaveChangesAsync();
+            limits.NoteSeatChange();
             return Results.Ok(ToDto((await LoadAsync(db, id))!, clock.GetUtcNow().UtcDateTime));
         });
 

@@ -35,6 +35,9 @@ public interface IBillingGateway
 
     /// <summary>The Stripe page where the clinic changes its card or cancels.</summary>
     Task<string> CreatePortalUrlAsync(string customerId, string returnUrl, CancellationToken ct = default);
+
+    /// <summary>Sets how many users the subscription bills for; Stripe prorates the change.</summary>
+    Task UpdateSeatsAsync(string subscriptionId, int seats, CancellationToken ct = default);
 }
 
 public sealed class StripeBillingGateway(IOptions<StripeOptions> options, ILogger<StripeBillingGateway> logger, HttpMessageHandler? handler = null) : IBillingGateway
@@ -69,6 +72,16 @@ public sealed class StripeBillingGateway(IOptions<StripeOptions> options, ILogge
         var session = await new Stripe.BillingPortal.SessionService(_client.Value).CreateAsync(
             new Stripe.BillingPortal.SessionCreateOptions { Customer = customerId, ReturnUrl = returnUrl }, cancellationToken: ct);
         return session.Url;
+    });
+
+    public Task UpdateSeatsAsync(string subscriptionId, int seats, CancellationToken ct = default) => CallAsync(async () =>
+    {
+        var service = new SubscriptionService(_client.Value);
+        var subscription = await service.GetAsync(subscriptionId, cancellationToken: ct);
+        var item = subscription.Items.Data.Single();
+        if (item.Quantity != seats)
+            await service.UpdateAsync(subscriptionId, new SubscriptionUpdateOptions { Items = [new() { Id = item.Id, Quantity = seats }] }, cancellationToken: ct);
+        return subscriptionId;
     });
 
     private async Task<string> CallAsync(Func<Task<string>> call)

@@ -42,6 +42,9 @@ namespace ClinicReport.Api.Data.Migrations.Catalog
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("BilledSeats")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("TEXT");
 

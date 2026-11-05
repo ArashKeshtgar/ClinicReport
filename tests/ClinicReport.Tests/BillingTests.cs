@@ -18,6 +18,19 @@ public sealed class RecordingBillingGateway : IBillingGateway
 {
     public List<CheckoutRequest> Checkouts { get; } = [];
     public List<(string Customer, string ReturnUrl)> Portals { get; } = [];
+    public List<(string Subscription, int Seats)> SeatUpdates { get; } = [];
+
+    /// <summary>Makes seat updates fail, like Stripe being unreachable.</summary>
+    public bool FailSeats { get; set; }
+
+    public Task UpdateSeatsAsync(string subscriptionId, int seats, CancellationToken ct = default)
+    {
+        if (FailSeats)
+            throw new ClinicReport.Api.Reports.ReportRuleException("Stripe is down (test).", 502);
+        lock (SeatUpdates)
+            SeatUpdates.Add((subscriptionId, seats));
+        return Task.CompletedTask;
+    }
 
     public Task<string> CreateCheckoutUrlAsync(CheckoutRequest request, CancellationToken ct = default)
     {

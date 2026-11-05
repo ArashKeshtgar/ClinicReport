@@ -89,6 +89,7 @@ public sealed class StripeEvents(CatalogDbContext catalog, TenantDirectory direc
                 break;
             case Subscription subscription when stripeEvent.Type == Deleted:
                 tenant.StripeSubscriptionId = null;
+                tenant.BilledSeats = null;
                 tenant.Plan = Plans.Free;
                 tenant.Status = TenantStatus.Cancelled;
                 tenant.CancelledAt = clock.GetUtcNow().UtcDateTime;
@@ -111,6 +112,9 @@ public sealed class StripeEvents(CatalogDbContext catalog, TenantDirectory direc
         if (tenant.Status != TenantStatus.Suspended || tenant.PastDueSince is not null)
             tenant.Status = TenantStatus.Active;
         tenant.StripeCustomerId = customerId;
+        // A new subscription starts at what Checkout set; the seat sync checks it.
+        if (tenant.StripeSubscriptionId != subscriptionId)
+            tenant.BilledSeats = null;
         tenant.StripeSubscriptionId = subscriptionId;
         tenant.CancelledAt = null;
         tenant.PastDueSince = null;

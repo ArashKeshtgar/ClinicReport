@@ -190,6 +190,8 @@ sign-in is not used in this mode.
   uses Stripe in test mode only (`Stripe__SecretKey`, which must be `sk_test_...`, `Stripe__ProPriceId` and
   `Stripe__WebhookSecret`, from `/run/secrets`). Without them the service runs and the billing page says it is not set
   up. This project takes no real payments.
+- **Seats.** Pro bills per active user. Adding or deactivating a user queues an update for a background service, so no
+  request waits for Stripe or fails with it, and a pass every hour catches whatever was missed.
 - **Stripe's webhook** is `POST /api/billing/stripe` at the root domain, the only thing that changes a plan. Stripe
   signs each event and may repeat or reorder them, so the signature is checked, an event already processed does
   nothing, and neither does one older than the last applied. When a subscription ends the clinic is read-only for 30
