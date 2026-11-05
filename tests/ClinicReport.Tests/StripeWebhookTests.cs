@@ -268,6 +268,46 @@ public class StripeWebhookTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Paying_ends_a_suspension_for_not_paying()
+    {
+        await SubscribedAsync("north");
+        await SendAsync(Event("invoice.payment_failed", FailedInvoice, created: Later()));
+        await ChangeTenantAsync("north", t => t.Status = TenantStatus.Suspended);
+
+        await SendAsync(Event("customer.subscription.updated", Subscription("active", "north"), created: Later()));
+
+        var tenant = await TenantAsync("north");
+        Assert.Equal(TenantStatus.Active, tenant.Status);
+        Assert.Null(tenant.PastDueSince);
+    }
+
+    [Fact]
+    public async Task Paying_does_not_end_the_operators_suspension()
+    {
+        await SubscribedAsync("north");
+        await ChangeTenantAsync("north", t => t.Status = TenantStatus.Suspended);
+
+        await SendAsync(Event("customer.subscription.updated", Subscription("active", "north"), created: Later()));
+
+        Assert.Equal(TenantStatus.Suspended, (await TenantAsync("north")).Status);
+    }
+
+    [Fact]
+    public async Task A_subscription_that_ends_while_suspended_starts_the_time_to_export()
+    {
+        await SubscribedAsync("north");
+        await SendAsync(Event("invoice.payment_failed", FailedInvoice, created: Later()));
+        await ChangeTenantAsync("north", t => t.Status = TenantStatus.Suspended);
+
+        await SendAsync(Event("customer.subscription.deleted", Subscription("canceled", "north"), created: Later()));
+
+        var tenant = await TenantAsync("north");
+        Assert.Equal(TenantStatus.Cancelled, tenant.Status);
+        Assert.NotNull(tenant.CancelledAt);
+        Assert.Null(tenant.PastDueSince);
+    }
+
+    [Fact]
     public async Task A_live_event_is_ignored()
     {
         await _factory.AddTenantAsync("north");

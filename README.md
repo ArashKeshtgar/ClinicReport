@@ -194,6 +194,9 @@ sign-in is not used in this mode.
   signs each event and may repeat or reorder them, so the signature is checked, an event already processed does
   nothing, and neither does one older than the last applied. When a subscription ends the clinic is read-only for 30
   days, to export or subscribe again; after that its subdomain is not found.
+- **A failed payment** makes the clinic past due, with a notice to everyone signed in there. Seven days later an hourly
+  job suspends it (read-only, as above); paying ends either. A suspension by the operator stays until the operator
+  lifts it, whatever Stripe reports.
 - **Upgrades.** `dotnet ClinicReport.Api.dll --migrate-all` migrates every tenant's database, one after another. A
   tenant that fails is logged and the others carry on; the exit code is 1 if any failed.
 

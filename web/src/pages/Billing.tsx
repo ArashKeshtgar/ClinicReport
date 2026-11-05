@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
-import { api, ApiError, type BillingStatus, type Meter } from '../api'
+import { Link, useSearchParams } from 'react-router'
+import { api, ApiError, type BillingNotice, type BillingStatus, type Meter } from '../api'
 
 const STATUS_NOTES: Record<string, string> = {
   PastDue: 'The last payment failed. Update the card to keep the clinic running.',
@@ -10,6 +10,29 @@ const STATUS_NOTES: Record<string, string> = {
 
 function Usage({ label, meter }: { label: string; meter: Meter }) {
   return <li>{label}: {meter.used}{meter.limit != null ? ` of ${meter.limit}` : ''}</li>
+}
+
+const day = (at?: string | null) => at ? new Date(at).toLocaleDateString() : null
+
+function noticeText({ status, until }: BillingNotice) {
+  if (status === 'PastDue') return `The last payment failed. ${day(until) ? `The clinic becomes read-only on ${day(until)}.` : 'The clinic will become read-only.'}`
+  if (status === 'Suspended') return 'This clinic is suspended: reports can be read and exported, not changed.'
+  return `The subscription has ended. ${day(until) ? `Reports can be read and exported until ${day(until)}.` : ''}`
+}
+
+/** Hosted: a payment problem, told to everyone at the clinic, as it decides whether they can keep working. */
+export function BillingBanner({ canManage }: { canManage: boolean }) {
+  const [notice, setNotice] = useState<BillingNotice | undefined>()
+
+  useEffect(() => { api.billingNotice().then(setNotice).catch(() => setNotice(undefined)) }, [])
+
+  if (!notice) return null
+  return (
+    <div className="demo-banner" role="note">
+      {noticeText(notice)}{' '}
+      {canManage ? <Link to="/billing">{notice.status === 'Cancelled' ? 'Subscribe again' : 'Update the card'}</Link> : <strong>Please tell your administrator.</strong>}
+    </div>
+  )
 }
 
 /** Hosted: the clinic's plan and what it uses of it. Subscribing and changing the card happen on Stripe's own pages. */

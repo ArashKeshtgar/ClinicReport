@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Billing from './Billing'
+import Billing, { BillingBanner } from './Billing'
 
 const status = (over: object = {}) => ({
   plan: 'Free', status: 'Active', onTrial: false, trialEndsAt: null,
@@ -57,5 +57,41 @@ describe('Billing', () => {
 
     expect(await screen.findByText('Billing is not set up on this server.')).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+describe('BillingBanner', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const banner = (notice: object | null, canManage: boolean) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(notice ? new Response(JSON.stringify(notice)) : new Response(null, { status: 204 }))
+    return render(<MemoryRouter><BillingBanner canManage={canManage} /></MemoryRouter>)
+  }
+
+  it('gives the date and a way to fix it to an administrator', async () => {
+    banner({ status: 'PastDue', until: '2026-11-12T12:00:00Z' }, true)
+
+    expect(await screen.findByRole('note')).toHaveTextContent(`read-only on ${new Date('2026-11-12T12:00:00Z').toLocaleDateString()}`)
+    expect(screen.getByRole('link', { name: 'Update the card' })).toHaveAttribute('href', '/billing')
+  })
+
+  it('tells others to ask their administrator, with no link they could not use', async () => {
+    banner({ status: 'Suspended' }, false)
+
+    expect(await screen.findByRole('note')).toHaveTextContent('tell your administrator')
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('offers a cancelled clinic to subscribe again', async () => {
+    banner({ status: 'Cancelled', until: '2026-12-01T12:00:00Z' }, true)
+
+    expect(await screen.findByRole('link', { name: 'Subscribe again' })).toBeInTheDocument()
+  })
+
+  it('shows nothing when there is nothing wrong', async () => {
+    const { container } = banner(null, true)
+
+    await new Promise(r => setTimeout(r, 0))
+    expect(container).toBeEmptyDOMElement()
   })
 })

@@ -58,7 +58,10 @@ public class Tenant
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
 
-    /// <summary>When the first failed payment put the clinic past due; the grace period runs from here.</summary>
+    /// <summary>
+    /// When the first failed payment put the clinic past due; the grace period runs from here. Kept once suspended,
+    /// which tells a suspension for not paying from the operator's, which paying doesn't undo.
+    /// </summary>
     public DateTime? PastDueSince { get; set; }
 
     /// <summary>When the subscription ended. Null for a tenant the operator cancelled, which is gone at once.</summary>
@@ -68,6 +71,9 @@ public class Tenant
     public DateTime? LastStripeEventAt { get; set; }
 
     public TenantSettings? Settings { get; set; }
+
+    /// <summary>How long a clinic stays past due before it is suspended.</summary>
+    public const int GraceDays = 7;
 
     /// <summary>How long a clinic whose subscription ended can still sign in, read and export.</summary>
     public const int ExportDays = 30;
@@ -85,6 +91,14 @@ public class Tenant
 
     /// <summary>Cancelled, and its time to export is over: the subdomain no longer answers.</summary>
     public bool Gone(DateTime now) => Status == TenantStatus.Cancelled && (CancelledAt is null || now >= CancelledAt.Value.AddDays(ExportDays));
+
+    /// <summary>When the clinic's current trouble takes effect or runs out: suspension, or the end of its time to export.</summary>
+    public DateTime? DeadlineAt => Status switch
+    {
+        TenantStatus.PastDue => PastDueSince?.AddDays(GraceDays),
+        TenantStatus.Cancelled => CancelledAt?.AddDays(ExportDays),
+        _ => null,
+    };
 
     /// <summary>The plan that applies now: a trial is Pro until it ends, then Free. A trial with no end date was set up by the operator.</summary>
     public string EffectivePlan(DateTime now) => Plan switch
@@ -186,6 +200,8 @@ public static class CatalogSetup
         config.GetSection("Stripe").Get<StripeOptions>()?.EnsureTestKey();
         services.AddSingleton<IBillingGateway, StripeBillingGateway>();
         services.AddScoped<StripeEvents>();
+        services.AddScoped<Dunning>();
+        services.AddHostedService<DunningService>();
         // The database of the request is the tenant of its host, prepared by the tenant middleware.
         services.AddSingleton<ClinicReportDatabases>();
         services.AddScoped(sp => sp.GetRequiredService<ClinicReportDatabases>().Open(

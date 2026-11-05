@@ -17,6 +17,7 @@ public static class BillingEndpoints
         string Plan, string Status, bool OnTrial, DateTime? TrialEndsAt,
         Meter Users, Meter Services, Meter SignedReports, bool Configured, bool CanUpgrade, bool CanManage);
     public record RedirectTo(string Url);
+    public record BillingNotice(string Status, DateTime? Until);
 
     public static void MapBillingEndpoints(this IEndpointRouteBuilder app)
     {
@@ -49,6 +50,12 @@ public static class BillingEndpoints
             await events.ApplyAsync(stripeEvent, ct);
             return Results.Ok();
         }).AllowAnonymous().WithTags("Billing");
+
+        // For everyone at the clinic, once signed in: not in /api/settings, which the sign-in page reads.
+        app.MapGet("/api/billing/notice", (ITenantContext current) =>
+            current.Tenant is { Status: TenantStatus.PastDue or TenantStatus.Suspended or TenantStatus.Cancelled } tenant
+                ? Results.Ok(new BillingNotice(tenant.Status, tenant.DeadlineAt))
+                : Results.NoContent()).RequireAuthorization().WithTags("Billing");
 
         admin.MapGet("/", async (ITenantContext current, PlanLimits limits, TimeProvider clock, IOptions<StripeOptions> stripe, CancellationToken ct) =>
         {

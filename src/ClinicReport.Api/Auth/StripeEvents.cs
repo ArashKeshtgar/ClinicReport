@@ -107,7 +107,9 @@ public sealed class StripeEvents(CatalogDbContext catalog, TenantDirectory direc
     private static void Subscribe(Tenant tenant, string customerId, string subscriptionId)
     {
         tenant.Plan = Plans.Pro;
-        tenant.Status = TenantStatus.Active;
+        // Suspended with no failed payment behind it is the operator's doing, and stays.
+        if (tenant.Status != TenantStatus.Suspended || tenant.PastDueSince is not null)
+            tenant.Status = TenantStatus.Active;
         tenant.StripeCustomerId = customerId;
         tenant.StripeSubscriptionId = subscriptionId;
         tenant.CancelledAt = null;

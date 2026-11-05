@@ -41,6 +41,8 @@ export type BillingStatus = {
   configured: boolean; canUpgrade: boolean; canManage: boolean
 }
 
+export type BillingNotice = { status: 'PastDue' | 'Suspended' | 'Cancelled'; until?: string | null }
+
 export type SignupRequest = { clinicName: string; slug: string; adminName: string; email: string; password: string }
 export type SignupResult = { slug: string; url: string; trialEndsAt: string; emailSent: boolean }
 export type SlugCheck = { slug: string; available: boolean; problem: string | null }
@@ -175,6 +177,7 @@ export const api = {
   onboarding: () => get<Onboarding>('/api/clinic/onboarding'),
   saveClinic: (body: ClinicLetterhead) => request<void>('PUT', '/api/clinic', body),
   billing: () => get<BillingStatus>('/api/billing'),
+  billingNotice: () => get<BillingNotice | undefined>('/api/billing/notice'),
   startCheckout: () => request<{ url: string }>('POST', '/api/billing/checkout'),
   openBillingPortal: () => request<{ url: string }>('POST', '/api/billing/portal'),
   resendVerification: () => request<{ sent: boolean; verified: boolean }>('POST', '/api/auth/verify-email/resend'),

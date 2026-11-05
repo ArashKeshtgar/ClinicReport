@@ -5,7 +5,7 @@ import Login, { ClinicHubSignIn } from './pages/Login'
 import Signup from './pages/Signup'
 import VerifyEmail, { VerifyEmailBanner } from './pages/VerifyEmail'
 import Clinic from './pages/Clinic'
-import Billing from './pages/Billing'
+import Billing, { BillingBanner } from './pages/Billing'
 import Worklist from './pages/Worklist'
 import NewReport from './pages/NewReport'
 import ReportEditor from './pages/ReportEditor'
@@ -76,6 +76,7 @@ export default function App() {
         </div>
       )}
       {!printing && settings.awaitingEmailVerification && <VerifyEmailBanner canResend={can(me, 'users.manage')} />}
+      {!printing && settings.hosted && <BillingBanner canManage={can(me, 'users.manage')} />}
       <main className={printing ? '' : 'page'}>
         <Routes>
           <Route path="/" element={<Worklist />} />
