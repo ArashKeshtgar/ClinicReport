@@ -75,6 +75,11 @@ export default function Clinic() {
         {message && <p className="muted" role="status">{message}</p>}
         <button className="primary" disabled={busy}>Save</button>
       </form>
+      <section className="card pad stack narrow-card" aria-label="Your data">
+        <h2>Your data</h2>
+        <p className="muted small">Everything the clinic has here as one zip file: patients, reports, a PDF of each signed report, templates and the audit trail. Keep it safe: it holds patient information. The export is recorded in the audit log.</p>
+        <a className="button" href="/api/clinic/export" download>Export all data</a>
+      </section>
     </>
   )
 }

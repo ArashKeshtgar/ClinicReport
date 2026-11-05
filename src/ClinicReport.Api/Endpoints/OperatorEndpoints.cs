@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using ClinicReport.Api.Auth;
 using ClinicReport.Api.Data;
 using ClinicReport.Api.Reports;
@@ -113,6 +115,24 @@ public static class OperatorEndpoints
                 tenant.PastDueNoticeAt = null;
             }, ct));
 
+        api.MapPost("/tenants/{id:int}/delete", DeleteAsync);
+
+        // For ControlPanel: counts only, and only with the token. Without one set, it isn't there.
+        app.MapGet("/healthz/tenants", async (HttpContext http, IConfiguration config, CatalogDbContext catalog, CancellationToken ct) =>
+        {
+            var token = config["Health:Token"];
+            if (string.IsNullOrEmpty(token) || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(http.Request.Headers["X-Health-Token"].ToString()), Encoding.UTF8.GetBytes(token)))
+                return Results.NotFound();
+            var tenants = await catalog.Tenants.AsNoTracking().Where(t => t.DeletedAt == null).Select(t => new { t.Status, t.DatabaseFailed }).ToListAsync(ct);
+            return Results.Ok(new
+            {
+                Tenants = tenants.Count,
+                ByStatus = tenants.GroupBy(t => t.Status).ToDictionary(g => g.Key, g => g.Count()),
+                DatabaseFailed = tenants.Count(t => t.DatabaseFailed),
+            });
+        }).AllowAnonymous();
+
         api.MapPost("/tenants/{id:int}/resume", (int id, ClaimsPrincipal me, CatalogDbContext catalog, TenantDirectory directory, TimeProvider clock, CancellationToken ct) =>
             ChangeAsync(id, me, catalog, directory, clock, OperatorEventTypes.TenantResumed, tenant =>
             {
@@ -122,6 +142,32 @@ public static class OperatorEndpoints
                 tenant.PastDueSince = null;
                 tenant.PastDueNoticeAt = null;
             }, ct));
+    }
+
+    /// <summary>Only a clinic past its time to export, and only by hand: the slug has to be typed out.</summary>
+    private static async Task<IResult> DeleteAsync(int id, DeleteBody body, ClaimsPrincipal me, CatalogDbContext catalog, ClinicReportDatabases databases,
+        TenantDirectory directory, TimeProvider clock, CancellationToken ct)
+    {
+        var tenant = await catalog.Tenants.Include(t => t.Settings).SingleOrDefaultAsync(t => t.Id == id, ct);
+        if (tenant is null || tenant.DeletedAt is not null)
+            return Results.NotFound();
+        var now = clock.GetUtcNow().UtcDateTime;
+        if (!tenant.Gone(now))
+            throw new ReportRuleException("This clinic is not past its time to export.");
+        if (body.ConfirmSlug != tenant.Slug)
+            throw new ReportRuleException("Type the clinic's address to confirm.", StatusCodes.Status400BadRequest);
+
+        // The file first: if this stops half-way, the clinic is still listed and it can be run again.
+        directory.Forget(tenant.Slug);
+        databases.Delete(tenant.Slug);
+        tenant.DeletedAt = now;
+        tenant.OwnerEmail = null;
+        tenant.EmailTokenHash = null;
+        if (tenant.Settings is not null)
+            catalog.TenantSettings.Remove(tenant.Settings);
+        Log(catalog, now, me.UserId(), OperatorEventTypes.TenantDeleted, tenant.Slug);
+        await catalog.SaveChangesAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> ChangeAsync(int id, ClaimsPrincipal me, CatalogDbContext catalog, TenantDirectory directory, TimeProvider clock,

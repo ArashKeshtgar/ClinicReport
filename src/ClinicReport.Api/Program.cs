@@ -79,6 +79,22 @@ if (args.Contains(TenantMigration.Command))
     return;
 }
 
+// "--backup-all folder" and "--restore-tenant slug file" (Hosted): consistent copies, and one clinic put back on its own.
+if (Array.IndexOf(args, TenantBackup.BackupCommand) is >= 0 and var backupArg)
+{
+    if (!hosted || backupArg + 1 >= args.Length)
+        throw new InvalidOperationException($"{TenantBackup.BackupCommand} <folder> is for Hosted mode.");
+    Environment.ExitCode = await TenantBackup.BackupAllAsync(app.Services, args[backupArg + 1]) == 0 ? 0 : 1;
+    return;
+}
+if (Array.IndexOf(args, TenantBackup.RestoreCommand) is >= 0 and var restoreArg)
+{
+    if (!hosted || restoreArg + 2 >= args.Length)
+        throw new InvalidOperationException($"{TenantBackup.RestoreCommand} <slug> <file> is for Hosted mode.");
+    await TenantBackup.RestoreAsync(app.Services, args[restoreArg + 1], args[restoreArg + 2]);
+    return;
+}
+
 // "--add-operator name" (Hosted): an account for the console. Its password and secret are shown here once.
 if (Array.IndexOf(args, OperatorSetup.Command) is >= 0 and var operatorArg)
 {
@@ -109,7 +125,7 @@ app.MapGet("/api/settings", (HttpContext http, IOptions<DemoOptions> demo, IOpti
 {
     // Hosted: the tenant of the host, or on the root domain the service's sign-up. Otherwise the "Clinic" settings.
     var signup = http.OnRootDomain();
-    var clinic = signup ? new ClinicOptions() : http.CurrentClinic();
+    var clinic = signup || http.OnOperatorHost() ? new ClinicOptions() : http.CurrentClinic();
     return new
     {
         clinic.Name, clinic.Address, clinic.Phone, clinic.ReportFooter,

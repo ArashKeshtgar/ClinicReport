@@ -199,6 +199,13 @@ sign-in is not used in this mode.
 - **A failed payment** makes the clinic past due, with a notice to everyone signed in there. Seven days later an hourly
   job suspends it (read-only, as above); paying ends either. A suspension by the operator stays until the operator
   lifts it, whatever Stripe reports.
+- **Usage** is counted in the catalog: signed reports as they happen, active users nightly. Counts only.
+- **The operator's console** is at `admin.<base domain>`, with accounts of its own, made with `--add-operator <name>`,
+  and a two-factor code at every sign-in. It lists clinics with their plan, usage and database size, and suspends,
+  resumes and deletes them. It works from the catalog and the file system and never opens a clinic's database.
+- **Leaving.** An administrator can export everything as one zip, with a PDF of each signed report, also while
+  suspended or cancelled. See [data handling](docs/data-handling.md) for what is kept where, for how long, who can reach
+  it, and how to back up and restore one clinic (`--backup-all`, `--restore-tenant`).
 - **Upgrades.** `dotnet ClinicReport.Api.dll --migrate-all` migrates every tenant's database, one after another. A
   tenant that fails is logged and the others carry on; the exit code is 1 if any failed.
 

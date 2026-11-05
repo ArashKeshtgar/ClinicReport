@@ -175,6 +175,7 @@ public class OperatorTests : IAsyncLifetime
         var settings = await Console().GetFromJsonAsync<JsonObject>("/api/settings");
 
         Assert.True((bool)settings!["operator"]!);
+        Assert.Equal("ClinicReport", (string)settings["name"]!);
         Assert.False((bool)settings["signup"]!);
         Assert.Equal(HttpStatusCode.NotFound, (await Console().PostAsJsonAsync("/api/signup", new { })).StatusCode);
     }

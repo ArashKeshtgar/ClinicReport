@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using ClinicReport.Api.Auth;
 using ClinicReport.Api.Data;
 using ClinicReport.Api.Reports;
@@ -39,6 +40,19 @@ public static class ClinicEndpoints
             // The letterhead comes from the cached tenant; the next request reads the new one.
             directory.Forget(tenant.Slug);
             return Results.NoContent();
+        });
+
+        // A GET, so it also works for a suspended or cancelled clinic, and logged in its own audit trail.
+        admin.MapGet("/export", async (HttpContext http, ClaimsPrincipal me, ClinicReportDbContext db, SecurityLog log, TimeProvider clock, CancellationToken ct) =>
+        {
+            var now = clock.GetUtcNow().UtcDateTime;
+            log.Add(SecurityEventTypes.DataExported, me.RequiredUserId());
+            await db.SaveChangesAsync(ct);
+            // On disk, as it can be large; gone when the response has been sent.
+            var file = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+            await TenantExport.WriteAsync(db, http.CurrentClinic(), file, now, ct);
+            file.Position = 0;
+            return Results.File(file, "application/zip", $"clinicreport-export-{now:yyyy-MM-dd}.zip");
         });
 
         admin.MapGet("/onboarding", async (ITenantContext current, ClinicReportDbContext db, CancellationToken ct) =>

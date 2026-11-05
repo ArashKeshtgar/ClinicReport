@@ -19,7 +19,7 @@ public static class TenantMigration
         List<string> slugs;
         using (var scope = services.CreateScope())
             slugs = await scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Tenants.AsNoTracking()
-                .OrderBy(t => t.Id).Select(t => t.Slug).ToListAsync(ct);
+                .Where(t => t.DeletedAt == null).OrderBy(t => t.Id).Select(t => t.Slug).ToListAsync(ct);
 
         var databases = services.GetRequiredService<ClinicReportDatabases>();
         var failed = 0;
@@ -29,6 +29,7 @@ public static class TenantMigration
             try
             {
                 await (await databases.OpenAsync(slug)).DisposeAsync();
+                await MarkAsync(services, slug, failed: false, ct);
                 logger.LogInformation("Migrated {Clinic}", slug);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -36,9 +37,18 @@ public static class TenantMigration
                 failed++;
                 // The message only, not the exception and its data: nothing from the tenant's rows goes in the log.
                 logger.LogError("Could not migrate {Clinic}: {Error}", slug, ex.Message);
+                await MarkAsync(services, slug, failed: true, ct);
             }
         }
         logger.LogInformation("Migrated {Done} of {Count} tenants", slugs.Count - failed, slugs.Count);
         return failed;
+    }
+
+    /// <summary>For the operator's console and /healthz/tenants.</summary>
+    private static async Task MarkAsync(IServiceProvider services, string slug, bool failed, CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Tenants.Where(t => t.Slug == slug)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.DatabaseFailed, failed), ct);
     }
 }

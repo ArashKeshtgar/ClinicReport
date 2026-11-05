@@ -109,6 +109,7 @@ public static class SecurityEventTypes
     public const string RoleDeleted = "RoleDeleted";
     public const string ReportViewed = "ReportViewed";
     public const string ReportSigned = "ReportSigned";
+    public const string DataExported = "DataExported";
 }
 
 /// <summary>Security and privacy audit trail: sign-ins, account changes, and who opened which patient's report.</summary>

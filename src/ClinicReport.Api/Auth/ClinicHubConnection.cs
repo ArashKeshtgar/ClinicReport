@@ -80,6 +80,8 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<
     public static bool IsValidSlug(string? slug) =>
         slug is { Length: >= 2 and <= 40 } && slug.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
 
+    public string ConnectionStringOf(string slug) => ConnectionString(slug);
+
     private string ConnectionString(string slug)
     {
         if (!IsValidSlug(slug))
@@ -102,14 +104,16 @@ public class ClinicReportDatabases(IOptions<ClinicHubOptions> options, IOptions<
         var file = new FileInfo(FileOf(slug));
         if (!file.Exists)
             return (0, null);
-        // Recent writes wait in the write-ahead log.
+        // Recent writes wait in the write-ahead log, sometimes all of a new clinic's.
         var wal = new FileInfo(file.FullName + "-wal");
-        return (file.Length, wal.Exists && wal.LastWriteTimeUtc > file.LastWriteTimeUtc ? wal.LastWriteTimeUtc : file.LastWriteTimeUtc);
+        return wal.Exists
+            ? (file.Length + wal.Length, wal.LastWriteTimeUtc > file.LastWriteTimeUtc ? wal.LastWriteTimeUtc : file.LastWriteTimeUtc)
+            : (file.Length, file.LastWriteTimeUtc);
     }
 
     /// <summary>
-    /// Removes a clinic's database file, for a sign-up that failed half-way. Not for a tenant in use: its open
-    /// requests would recreate the file.
+    /// Removes a clinic's database file: a sign-up that failed half-way, or a cancelled clinic past its time to
+    /// export. Not for a tenant in use: its open requests would recreate the file.
     /// </summary>
     public void Delete(string slug)
     {
