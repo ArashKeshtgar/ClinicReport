@@ -14,6 +14,23 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ClinicReport.Tests;
 
+/// <summary>Every save loses the race for a report, as if others kept saving first.</summary>
+public sealed class AlwaysConflictingInterceptor : SaveChangesInterceptor
+{
+    public int Attempts;
+
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context!.ChangeTracker.Entries<ClinicReport.Api.Data.Report>().Any(e => e.State == EntityState.Modified))
+        {
+            Interlocked.Increment(ref Attempts);
+            throw new DbUpdateConcurrencyException("Lost the race (test).");
+        }
+        return ValueTask.FromResult(result);
+    }
+}
+
 /// <summary>Hosted (multi-tenant) mode: tenants in the catalog, each at {slug}.clinicreport.test.</summary>
 public class HostedFactory : ApiFactory
 {
@@ -276,6 +293,24 @@ public class HostedTests : IAsyncLifetime
         south.DefaultRequestHeaders.Add("Cookie", northCookie);
         Assert.Equal(HttpStatusCode.Unauthorized, (await south.GetAsync("/api/patients")).StatusCode);
         Assert.DoesNotContain(recorder.Queries, q => q.Database == _factory.DatabaseOf("south") && q.Sql.Contains("\"Users\""));
+    }
+
+    [Fact]
+    public async Task An_edit_that_keeps_losing_the_race_gets_a_clear_answer_not_a_crash()
+    {
+        var conflicts = new AlwaysConflictingInterceptor();
+        var factory = _factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<IInterceptor>(conflicts)));
+        await _factory.AddTenantAsync("conflicts");
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri($"http://conflicts.{HostedFactory.BaseDomain}"), HandleCookies = true });
+        client.DefaultRequestHeaders.Add(AuthSetup.CsrfHeader, "1");
+        (await client.PostAsJsonAsync("/api/auth/demo-login", new { userName = "demo.typist" })).EnsureSuccessStatusCode();
+        var draft = (await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonArray>("/api/reports"))!.First(r => (string)r!["status"]! == "Draft")!;
+
+        var res = await client.PatchAsJsonAsync($"/api/reports/{draft["id"]}/values", new { values = new { heart_rate = 70 } });
+
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+        Assert.Contains("Try again", await res.Content.ReadAsStringAsync());
+        Assert.True(conflicts.Attempts > 1);
     }
 
     [Fact]

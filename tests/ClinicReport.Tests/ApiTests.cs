@@ -129,9 +129,12 @@ public class ApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var physician = await factory.SignInAsync("demo.physician");
         var id = await NewEchoReportAsync(typist);
 
+        // Each edit that loses a race retries, so on a slow machine one can lose to nearly all the others.
         var fields = new[] { "ivsd", "lvidd", "lvpwd", "lvids", "la_volume", "ao_root", "rv_basal", "tapse", "e_wave", "a_wave" };
-        await Task.WhenAll(fields.Select((f, i) =>
+        var results = await Task.WhenAll(fields.Select((f, i) =>
             Patch(i % 2 == 0 ? typist : physician, id, new Dictionary<string, object> { [f] = 10 + i })));
+        foreach (var res in results)
+            await Json(res);
 
         var report = await Json(await typist.GetAsync($"/api/reports/{id}"));
         foreach (var (f, i) in fields.Select((f, i) => (f, i)))

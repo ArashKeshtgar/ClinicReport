@@ -36,7 +36,8 @@ public class ReportRuleException(string message, int status = StatusCodes.Status
 public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub, TimeProvider clock, IOptions<ClinicHubOptions> clinicHub, IHttpContextAccessor http, PlanLimits limits)
 {
     private const int MaxTextLength = 4000;
-    private const int MaxSaveAttempts = 5;
+    /// <summary>Every lost attempt means someone else's save went through, so this many people can always save at once.</summary>
+    private const int MaxSaveAttempts = 20;
 
     public async Task<Report?> LoadAsync(int id, CancellationToken ct) =>
         await db.Reports
@@ -226,8 +227,10 @@ public class ReportService(ClinicReportDbContext db, IHubContext<ReportHub> hub,
             {
                 await db.SaveChangesAsync(ct);
             }
-            catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts)
+            catch (DbUpdateConcurrencyException)
             {
+                if (attempt == MaxSaveAttempts)
+                    throw new ReportRuleException("Too many changes to this report at once. Try again.");
                 // Someone else saved between our read and write: start over from their version.
                 db.ChangeTracker.Clear();
                 continue;
